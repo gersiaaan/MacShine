@@ -97,6 +97,30 @@ const config = ref(props.config)
       :config="config"
     />
 
+    <PlatformLayout :platform="platform">
+      <template #macos>
+        <!-- Per-client virtual display -->
+        <Checkbox class="mb-3"
+                  id="macos_virtual_display"
+                  locale-prefix="config"
+                  v-model="config.macos_virtual_display"
+                  default="true"
+        ></Checkbox>
+        <Checkbox class="mb-3"
+                  id="macos_virtual_display_hidpi"
+                  locale-prefix="config"
+                  v-model="config.macos_virtual_display_hidpi"
+                  default="true"
+        ></Checkbox>
+        <Checkbox class="mb-3"
+                  id="macos_virtual_display_primary"
+                  locale-prefix="config"
+                  v-model="config.macos_virtual_display_primary"
+                  default="true"
+        ></Checkbox>
+      </template>
+    </PlatformLayout>
+
     <DisplayDeviceOptions
       :platform="platform"
       :config="config"

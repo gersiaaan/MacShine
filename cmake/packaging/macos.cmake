@@ -1,6 +1,8 @@
 # macos specific packaging
 
 if (SUNSHINE_BUILD_HOMEBREW)
+    install(TARGETS sunshine_vd_helper RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
     install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/macos/assets/"
             DESTINATION "${SUNSHINE_ASSETS_DIR}")
 
@@ -21,6 +23,10 @@ else()
     install(TARGETS sunshine
         BUNDLE DESTINATION .
         COMPONENT Runtime)
+
+    install(PROGRAMS "$<TARGET_FILE:sunshine_vd_helper>"
+            DESTINATION "${MAC_BUNDLE_CONTENTS}/MacOS"
+            COMPONENT Runtime)
 
     if(SUNSHINE_ENABLE_TRAY)
         # Import Qt in this directory so its deployment commands and targets are visible here.
@@ -118,6 +124,16 @@ qt6_deploy_runtime_dependencies(
                       message(FATAL_ERROR \"codesign failed while signing library: \${item}\")
                   endif()
               endforeach()
+          endif()
+
+          # Sign the virtual display helper before the app that contains it
+          execute_process(COMMAND /usr/bin/codesign --verbose=2
+              --sign \"${APPLE_CODESIGN_IDENTITY}\" \"\${_app}/Contents/MacOS/sunshine_vd_helper\"
+              --force --timestamp --options=runtime
+              RESULT_VARIABLE rc_helper
+          )
+          if(NOT rc_helper EQUAL 0)
+              message(FATAL_ERROR \"codesign failed while signing sunshine_vd_helper\")
           endif()
 
           # Sign the app last

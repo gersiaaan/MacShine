@@ -27,3 +27,16 @@ endif()
 
 # Tell linker to dynamically load these symbols at runtime, in case they're unavailable:
 target_link_options(sunshine PRIVATE -Wl,-U,_CGPreflightScreenCaptureAccess -Wl,-U,_CGRequestScreenCaptureAccess)
+
+# Virtual display helper: owns one CGVirtualDisplay per stream session (see src/platform/macos/vd_helper.m).
+# It lives next to the sunshine executable, which is where Sunshine looks for it at runtime.
+add_executable(sunshine_vd_helper "${CMAKE_SOURCE_DIR}/src/platform/macos/vd_helper.m")
+target_compile_options(sunshine_vd_helper PRIVATE -fobjc-arc -Wall)
+target_link_libraries(sunshine_vd_helper PRIVATE "-framework Foundation" "-framework CoreGraphics")
+add_dependencies(sunshine sunshine_vd_helper)
+add_custom_command(TARGET sunshine POST_BUILD
+        COMMENT "Copying virtual display helper next to sunshine"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "$<TARGET_FILE:sunshine_vd_helper>"
+                "$<TARGET_FILE_DIR:sunshine>/sunshine_vd_helper"
+        VERBATIM)

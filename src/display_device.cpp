@@ -40,6 +40,8 @@
   #include <display_device/macos/mac_api_layer.h>
   #include <display_device/macos/mac_display_device.h>
   #include <display_device/macos/settings_manager.h>
+
+  #include "platform/macos/virtual_display.h"
 #endif
 
 namespace display_device {
@@ -930,6 +932,13 @@ namespace display_device {
   }
 
   std::string map_output_name(const std::string &output_name) {
+#ifdef __APPLE__
+    // While a session's virtual display exists, it is the display to capture.
+    if (auto virtual_display_id {platf::virtual_display::active_display_id()}; !virtual_display_id.empty()) {
+      return virtual_display_id;
+    }
+#endif
+
     std::lock_guard lock {DD_DATA.mutex};
     if (!DD_DATA.sm_instance) {
       // Fallback to giving back the output name if the platform is not supported.
@@ -950,6 +959,32 @@ namespace display_device {
   }
 
   void configure_display(const config::video_t &video_config, const rtsp_stream::launch_session_t &session) {
+#ifdef __APPLE__
+    if (video_config.macos_vd.enabled) {
+      // A stable key per paired client, so macOS remembers each client's display separately.
+      const auto client_key {!session.client_cert.empty() ? session.client_cert : session.client_name + session.unique_id};
+      std::string name {"MacShine"};
+      if (!session.client_name.empty()) {
+        name += " - " + session.client_name;
+      }
+
+      const platf::virtual_display::request_t request {
+        .width = session.width,
+        .height = session.height,
+        .fps = session.fps,
+        .hidpi = video_config.macos_vd.hidpi,
+        .make_primary = video_config.macos_vd.make_primary,
+        .serial = platf::virtual_display::serial_for_client(client_key),
+        .name = name,
+      };
+      if (platf::virtual_display::create(request)) {
+        // The virtual display already matches the client, no physical display changes are needed.
+        return;
+      }
+      BOOST_LOG(warning) << "Could not create a virtual display, streaming a physical display instead.";
+    }
+#endif
+
     const auto result {parse_configuration(video_config, session)};
     if (const auto *parsed_config {std::get_if<SingleDisplayConfiguration>(&result)}; parsed_config) {
       configure_display(*parsed_config);
@@ -999,6 +1034,11 @@ namespace display_device {
   }
 
   void revert_configuration() {
+#ifdef __APPLE__
+    // The session is over: remove the virtual display, macOS restores the previous main display.
+    platf::virtual_display::destroy();
+#endif
+
     std::lock_guard lock {DD_DATA.mutex};
     revert_configuration_unlocked(revert_option_e::try_indefinitely_with_delay);
   }
