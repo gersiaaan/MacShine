@@ -870,6 +870,11 @@ namespace display_device {
   }  // namespace
 
   std::unique_ptr<platf::deinit_t> init(const std::filesystem::path &persistence_filepath, const config::video_t &video_config) {
+#ifdef __APPLE__
+    // A previous run may have died while a virtual display session had the host displays turned off.
+    platf::virtual_display::restore_host_displays();
+#endif
+
     std::lock_guard lock {DD_DATA.mutex};
     // We can support re-init without any issues, however we should make sure to clean up first!
     revert_configuration_unlocked(revert_option_e::try_once);
@@ -974,6 +979,7 @@ namespace display_device {
         .fps = session.fps,
         .hidpi = video_config.macos_vd.hidpi,
         .make_primary = video_config.macos_vd.make_primary,
+        .disable_others = video_config.macos_vd.disable_host,
         .serial = platf::virtual_display::serial_for_client(client_key),
         .name = name,
       };

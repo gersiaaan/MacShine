@@ -1140,6 +1140,132 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
     </tr>
 </table>
 
+### macos_virtual_display
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Create a virtual display with the client's resolution and refresh rate for every stream and stream
+            that display instead of a physical one. It is removed when the app quits. Each paired client gets its own
+            display that macOS remembers.
+            @note{This option only applies to macOS. It uses the private `CGVirtualDisplay` API.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            macos_virtual_display = disabled
+            @endcode</td>
+    </tr>
+</table>
+
+### macos_virtual_display_hidpi
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Render the virtual display at 2x scale (Retina), so text stays readable at the client's native
+            resolution. Disable to get the full resolution as desktop space.
+            @note{This option only applies to macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            macos_virtual_display_hidpi = disabled
+            @endcode</td>
+    </tr>
+</table>
+
+### macos_virtual_display_primary
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Make the virtual display the main display while streaming, so the menu bar and Dock move onto it
+            and the client sees the full desktop.
+            @note{This option only applies to macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            macos_virtual_display_primary = disabled
+            @endcode</td>
+    </tr>
+</table>
+
+### macos_virtual_display_disable_host
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Turn the Mac's own displays off while a client streams, so the desktop only exists on the virtual
+            display. They turn back on when the stream ends, and on the next start if Sunshine stopped unexpectedly.
+            @note{This option only applies to macOS. It uses the private `CGSConfigureDisplayEnabled` API.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            disabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            macos_virtual_display_disable_host = enabled
+            @endcode</td>
+    </tr>
+</table>
+
+### macos_stop_stream_hotkey
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Press Cmd+Esc on the Mac to end every stream, quit the running app and turn the host displays
+            back on. The shortcut also fires when a client sends Cmd+Esc. Requires the system tray.
+            @note{This option only applies to macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            macos_stop_stream_hotkey = disabled
+            @endcode</td>
+    </tr>
+</table>
+
 ### dd_configuration_option
 
 <table>

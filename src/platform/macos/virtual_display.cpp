@@ -52,6 +52,7 @@ namespace platf::virtual_display {
       std::condition_variable ready_cv;
       bool ready {false};
       bool exited {false};
+      bool stopping {false};  ///< Sunshine asked the helper to exit, so it restores the host displays itself.
       std::string ready_display_id;
     };
 
@@ -107,11 +108,19 @@ namespace platf::virtual_display {
       }
       close(read_fd);
 
+      bool stopping {false};
       {
         std::lock_guard lock {state->ready_mutex};
         state->exited = true;
+        stopping = state->stopping;
       }
       state->ready_cv.notify_all();
+
+      // A helper that died on its own (crash, SIGKILL) could not turn the host displays back on.
+      if (!stopping && state->request.disable_others) {
+        BOOST_LOG(warning) << "Virtual display helper exited unexpectedly, turning host displays back on"sv;
+        restore_host_displays();
+      }
     }
 
     void stop_helper_unlocked() {
@@ -119,6 +128,10 @@ namespace platf::virtual_display {
         return;
       }
       auto &helper {*g_helper};
+      {
+        std::lock_guard ready_lock {helper.ready_mutex};
+        helper.stopping = true;
+      }
 
       if (helper.stdin_fd >= 0) {
         close(helper.stdin_fd);  // EOF on the lifeline makes the helper exit on its own
@@ -146,6 +159,9 @@ namespace platf::virtual_display {
         if (!reaped) {
           kill(helper.pid, SIGKILL);
           waitpid(helper.pid, &status, 0);
+          if (helper.request.disable_others) {
+            restore_host_displays();
+          }
         }
       }
 
@@ -159,6 +175,53 @@ namespace platf::virtual_display {
       g_helper.reset();
     }
   }  // namespace
+
+  std::vector<std::string> helper_arguments(const std::string &helper, const request_t &request) {
+    return {
+      helper,
+      "--width",
+      std::to_string(request.width),
+      "--height",
+      std::to_string(request.height),
+      "--fps",
+      std::to_string(request.fps),
+      "--hidpi",
+      request.hidpi ? "1" : "0",
+      "--primary",
+      request.make_primary ? "1" : "0",
+      "--disable-others",
+      request.disable_others ? "1" : "0",
+      "--serial",
+      std::to_string(request.serial),
+      "--name",
+      request.name,
+    };
+  }
+
+  void restore_host_displays() {
+    const auto path {helper_path()};
+    if (path.empty() || access(path.c_str(), X_OK) != 0) {
+      return;
+    }
+
+    std::array<char *, 3> argv {const_cast<char *>(path.c_str()), const_cast<char *>("--restore"), nullptr};
+    posix_spawnattr_t attributes;
+    posix_spawnattr_init(&attributes);
+    posix_spawnattr_setflags(&attributes, POSIX_SPAWN_CLOEXEC_DEFAULT);
+    pid_t pid {-1};
+    const int spawn_result {posix_spawn(&pid, path.c_str(), nullptr, &attributes, argv.data(), environ)};
+    posix_spawnattr_destroy(&attributes);
+    if (spawn_result != 0) {
+      BOOST_LOG(error) << "Failed to run the virtual display helper to restore host displays: "sv << spawn_result;
+      return;
+    }
+
+    int status {};
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+      BOOST_LOG(error) << "Could not turn host displays back on; log out and back in to restore them"sv;
+    }
+  }
 
   std::uint32_t serial_for_client(const std::string &client_key) {
     // FNV-1a, 32 bit
@@ -181,8 +244,7 @@ namespace platf::virtual_display {
         std::lock_guard ready_lock {g_helper->ready_mutex};
         alive = !g_helper->exited;
       }
-      if (alive && current.width == request.width && current.height == request.height && current.fps == request.fps &&
-          current.hidpi == request.hidpi && current.make_primary == request.make_primary && current.serial == request.serial) {
+      if (alive && current.width == request.width && current.height == request.height && current.fps == request.fps && current.hidpi == request.hidpi && current.make_primary == request.make_primary && current.disable_others == request.disable_others && current.serial == request.serial) {
         BOOST_LOG(info) << "Reusing virtual display "sv << g_helper->display_id;
         return g_helper->display_id;
       }
@@ -207,23 +269,7 @@ namespace platf::virtual_display {
       return std::nullopt;
     }
 
-    const std::vector<std::string> args {
-      path.string(),
-      "--width",
-      std::to_string(request.width),
-      "--height",
-      std::to_string(request.height),
-      "--fps",
-      std::to_string(request.fps),
-      "--hidpi",
-      request.hidpi ? "1" : "0",
-      "--primary",
-      request.make_primary ? "1" : "0",
-      "--serial",
-      std::to_string(request.serial),
-      "--name",
-      request.name,
-    };
+    const auto args {helper_arguments(path.string(), request)};
     std::vector<char *> argv;
     argv.reserve(args.size() + 1);
     for (const auto &arg : args) {
@@ -259,6 +305,7 @@ namespace platf::virtual_display {
     fcntl(out_pipe[0], F_SETFD, FD_CLOEXEC);
 
     g_helper = std::make_unique<helper_state_t>();
+    g_helper->request = request;
     g_helper->pid = pid;
     g_helper->stdin_fd = in_pipe[1];
     g_helper->reader = std::thread {read_helper_output, g_helper.get(), out_pipe[0]};
@@ -284,7 +331,6 @@ namespace platf::virtual_display {
     }
 
     g_helper->display_id = display_id;
-    g_helper->request = request;
     return display_id;
   }
 

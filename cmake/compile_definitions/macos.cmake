@@ -28,6 +28,7 @@ endif()
 list(APPEND SUNSHINE_EXTERNAL_LIBRARIES
         ${APP_KIT_LIBRARY}
         ${APP_SERVICES_LIBRARY}
+        "-framework Carbon"
         ${AUDIO_TOOLBOX_LIBRARY}
         ${AUDIO_UNIT_LIBRARY}
         ${AV_FOUNDATION_LIBRARY}
@@ -61,6 +62,8 @@ set(PLATFORM_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/platform/macos/publish.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/sc_video.h"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/sc_video.m"
+        "${CMAKE_SOURCE_DIR}/src/platform/macos/stop_hotkey.h"
+        "${CMAKE_SOURCE_DIR}/src/platform/macos/stop_hotkey.mm"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/virtual_display.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/virtual_display.h"
         "${CMAKE_SOURCE_DIR}/third-party/TPCircularBuffer/TPCircularBuffer.c"

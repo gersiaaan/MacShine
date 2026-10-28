@@ -118,6 +118,18 @@ const config = ref(props.config)
                   v-model="config.macos_virtual_display_primary"
                   default="true"
         ></Checkbox>
+        <Checkbox class="mb-3"
+                  id="macos_virtual_display_disable_host"
+                  locale-prefix="config"
+                  v-model="config.macos_virtual_display_disable_host"
+                  default="false"
+        ></Checkbox>
+        <Checkbox class="mb-3"
+                  id="macos_stop_stream_hotkey"
+                  locale-prefix="config"
+                  v-model="config.macos_stop_stream_hotkey"
+                  default="true"
+        ></Checkbox>
       </template>
     </PlatformLayout>
 

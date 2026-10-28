@@ -14,6 +14,7 @@
 // platform includes
 #ifdef __APPLE__
   #include "platform/macos/misc.h"
+  #include "platform/macos/stop_hotkey.h"
 
   #include <mach-o/dyld.h>
 #endif
@@ -545,7 +546,25 @@ int main(int argc, char *argv[]) {
     });
   }
 
+#ifdef __APPLE__
+  // The hotkey is delivered through the main thread's event loop, which only runs with the tray.
+  if (config::video.macos_vd.stop_hotkey && tray_is_enabled && config::sunshine.system_tray) {
+    platf::stop_hotkey::register_hotkey([]() {
+      // Same as a client's "quit app": end every stream, stop the app and restore the displays.
+      rtsp_stream::terminate_sessions();
+      if (proc::proc.running() > 0) {
+        proc::proc.terminate();
+      }
+      display_device::revert_configuration();
+    });
+  }
+#endif
+
   mainThreadLoop(shutdown_event);
+
+#ifdef __APPLE__
+  platf::stop_hotkey::unregister_hotkey();
+#endif
 
   permission_watcher.request_stop();
   if (permission_watcher.joinable()) {
