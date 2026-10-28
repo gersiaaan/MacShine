@@ -7,8 +7,8 @@
 #include <atomic>
 #include <charconv>
 #include <chrono>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -102,6 +102,7 @@ namespace platf {
 
         std::shared_ptr<img_t> img_out;
         if (!pull_free_image_cb(img_out)) {
+          BOOST_LOG(debug) << "Capture interrupted: no free image"sv;
           // got interrupt signal
           // returning false here stops capture backend
           return false;
@@ -126,6 +127,7 @@ namespace platf {
         old_data_retainer = nullptr;
 
         if (!push_captured_image_cb(std::move(img_out), true)) {
+          BOOST_LOG(debug) << "Capture interrupted by the encoder"sv;
           // got interrupt signal
           // returning false here stops capture backend
           return false;
@@ -142,6 +144,7 @@ namespace platf {
       // FIXME: We should time out if an image isn't returned for a while
       dispatch_semaphore_wait(signal, DISPATCH_TIME_FOREVER);
 
+      BOOST_LOG(debug) << "Display "sv << display_id << " capture ended"sv;
       return capture_e::ok;
     }
 
@@ -245,7 +248,7 @@ namespace platf {
       const OSType format = av_capture.pixelFormat;
 
       CVPixelBufferRef pixel_buffer = nullptr;
-      NSDictionary *attributes = @{(NSString *) kCVPixelBufferIOSurfacePropertiesKey: @{}};
+      NSDictionary *attributes = @{(NSString *) kCVPixelBufferIOSurfacePropertiesKey: @ {}};
       if (CVPixelBufferCreate(kCFAllocatorDefault, width, height, format, (CFDictionaryRef) attributes, &pixel_buffer) != kCVReturnSuccess) {
         return false;
       }
