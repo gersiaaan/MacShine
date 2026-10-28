@@ -148,6 +148,15 @@ namespace config {
     std::string output_name;  ///< Display output name selected in configuration.
 
     /**
+     * @brief Per-session virtual display settings (macOS).
+     */
+    struct macos_virtual_display_t {
+      bool enabled;  ///< Create a virtual display matching each client's resolution and refresh rate.
+      bool hidpi;  ///< Create Retina (HiDPI) virtual displays when the client resolution allows it.
+      bool make_primary;  ///< Make the virtual display the main display (menu bar and Dock) while streaming.
+    } macos_vd;  ///< macOS virtual display settings.
+
+    /**
      * @brief Display-device integration settings.
      */
     struct dd_t {
