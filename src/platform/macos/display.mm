@@ -136,7 +136,7 @@ namespace platf {
 
       if (!signal) {
         BOOST_LOG(error) << "Failed to start display capture"sv;
-        return capture_e::error;
+        return capture_e::capture_error;
       }
 
       // FIXME: We should time out if an image isn't returned for a while
