@@ -40,3 +40,11 @@ add_custom_command(TARGET sunshine POST_BUILD
                 "$<TARGET_FILE:sunshine_vd_helper>"
                 "$<TARGET_FILE_DIR:sunshine>/sunshine_vd_helper"
         VERBATIM)
+# Also copy when only the helper changed: then sunshine is not relinked and its POST_BUILD does not run.
+add_custom_command(TARGET sunshine_vd_helper POST_BUILD
+        COMMENT "Copying virtual display helper next to sunshine"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:sunshine>"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "$<TARGET_FILE:sunshine_vd_helper>"
+                "$<TARGET_FILE_DIR:sunshine>/sunshine_vd_helper"
+        VERBATIM)

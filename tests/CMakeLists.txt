@@ -172,6 +172,9 @@ if (APPLE)
     file(GLOB_RECURSE MACOS_TEST_SOURCES CONFIGURE_DEPENDS
             ${CMAKE_SOURCE_DIR}/tests/*.mm)
     list(APPEND TEST_SOURCES ${MACOS_TEST_SOURCES})
+
+    # Source file properties are directory-scoped, so the ARC flag from macos.cmake does not reach this target.
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/src/platform/macos/sc_video.m" PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 endif ()
 
 set(SUNSHINE_SOURCES
