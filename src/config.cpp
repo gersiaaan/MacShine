@@ -806,6 +806,8 @@ namespace config {
       true,  // macos_vd.enabled
       true,  // macos_vd.hidpi
       true,  // macos_vd.make_primary
+      false,  // macos_vd.disable_host
+      true,  // macos_vd.stop_hotkey
     },
 
     {
@@ -1739,6 +1741,8 @@ namespace config {
     bool_f(vars, "macos_virtual_display", video.macos_vd.enabled);
     bool_f(vars, "macos_virtual_display_hidpi", video.macos_vd.hidpi);
     bool_f(vars, "macos_virtual_display_primary", video.macos_vd.make_primary);
+    bool_f(vars, "macos_virtual_display_disable_host", video.macos_vd.disable_host);
+    bool_f(vars, "macos_stop_stream_hotkey", video.macos_vd.stop_hotkey);
 
     generic_f(vars, "dd_configuration_option", video.dd.configuration_option, dd::config_option_from_view);
     generic_f(vars, "dd_resolution_option", video.dd.resolution_option, dd::resolution_option_from_view);

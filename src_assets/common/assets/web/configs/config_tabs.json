@@ -48,6 +48,8 @@
       "macos_virtual_display": "enabled",
       "macos_virtual_display_hidpi": "enabled",
       "macos_virtual_display_primary": "enabled",
+      "macos_virtual_display_disable_host": "disabled",
+      "macos_stop_stream_hotkey": "enabled",
       "dd_configuration_option": "disabled",
       "dd_resolution_option": "auto",
       "dd_manual_resolution": "",
