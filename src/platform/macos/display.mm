@@ -4,8 +4,10 @@
  */
 
 // standard includes
+#include <atomic>
 #include <charconv>
 #include <chrono>
+#include <cstring>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -183,7 +185,14 @@ namespace platf {
         return 1;
       }
 
+      // MacShine: a freshly created, idle virtual display may not deliver a frame until something on
+      // it changes. Never wait forever for the probe frame; fall back to a synthetic black frame.
+      auto abandoned = std::make_shared<std::atomic<bool>>(false);
+
       auto signal = [av_capture capture:^(CMSampleBufferRef sampleBuffer) {
+        if (abandoned->load()) {
+          return false;
+        }
         auto new_sample_buffer = std::make_shared<av_sample_buf_t>(sampleBuffer);
         auto new_pixel_buffer = std::make_shared<av_pixel_buf_t>(new_sample_buffer->buf);
 
@@ -210,9 +219,68 @@ namespace platf {
         return false;
       }];
 
-      dispatch_semaphore_wait(signal, DISPATCH_TIME_FOREVER);
+      if (dispatch_semaphore_wait(signal, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0) {
+        return 0;
+      }
 
-      return 0;
+      abandoned->store(true);
+      BOOST_LOG(warning) << "No frame from display "sv << display_id << " within 2s, using a synthetic frame for encoder probing"sv;
+      return synthetic_img(img) ? 0 : 1;
+    }
+
+    /**
+     * @brief Fill an image with a black frame in the capture pixel format (MacShine).
+     * @param img Image to populate.
+     * @return True on success.
+     */
+    bool synthetic_img(img_t *img) {
+      const int width = av_capture.frameWidth;
+      const int height = av_capture.frameHeight;
+      const OSType format = av_capture.pixelFormat;
+
+      CVPixelBufferRef pixel_buffer = nullptr;
+      NSDictionary *attributes = @{(NSString *) kCVPixelBufferIOSurfacePropertiesKey: @{}};
+      if (CVPixelBufferCreate(kCFAllocatorDefault, width, height, format, (CFDictionaryRef) attributes, &pixel_buffer) != kCVReturnSuccess) {
+        return false;
+      }
+
+      CVPixelBufferLockBaseAddress(pixel_buffer, 0);
+      if (CVPixelBufferIsPlanar(pixel_buffer)) {
+        // Video-range black for YUV formats: Y = 16, UV = 128
+        for (size_t plane = 0; plane < CVPixelBufferGetPlaneCount(pixel_buffer); ++plane) {
+          std::memset(CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, plane), plane == 0 ? 16 : 128, CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, plane) * CVPixelBufferGetHeightOfPlane(pixel_buffer, plane));
+        }
+      } else {
+        std::memset(CVPixelBufferGetBaseAddress(pixel_buffer), 0, CVPixelBufferGetBytesPerRow(pixel_buffer) * CVPixelBufferGetHeight(pixel_buffer));
+      }
+      CVPixelBufferUnlockBaseAddress(pixel_buffer, 0);
+
+      CMVideoFormatDescriptionRef format_description = nullptr;
+      CMSampleBufferRef sample_buffer = nullptr;
+      CMSampleTimingInfo timing {kCMTimeInvalid, kCMTimeZero, kCMTimeInvalid};
+      const bool ok = CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pixel_buffer, &format_description) == noErr &&
+                      CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault, pixel_buffer, format_description, &timing, &sample_buffer) == noErr;
+      if (ok) {
+        auto new_sample_buffer = std::make_shared<av_sample_buf_t>(sample_buffer);
+        auto new_pixel_buffer = std::make_shared<av_pixel_buf_t>(new_sample_buffer->buf);
+        auto av_img = (av_img_t *) img;
+        av_img->sample_buffer = new_sample_buffer;
+        av_img->pixel_buffer = new_pixel_buffer;
+        img->data = new_pixel_buffer->data();
+        img->width = (int) CVPixelBufferGetWidth(new_pixel_buffer->buf);
+        img->height = (int) CVPixelBufferGetHeight(new_pixel_buffer->buf);
+        img->row_pitch = (int) CVPixelBufferGetBytesPerRow(new_pixel_buffer->buf);
+        img->pixel_pitch = img->row_pitch / img->width;
+      }
+
+      if (sample_buffer) {
+        CFRelease(sample_buffer);
+      }
+      if (format_description) {
+        CFRelease(format_description);
+      }
+      CVPixelBufferRelease(pixel_buffer);
+      return ok;
     }
 
     /**
