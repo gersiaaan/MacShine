@@ -22,6 +22,7 @@
 #include "src/platform/macos/av_video.h"
 #include "src/platform/macos/misc.h"
 #include "src/platform/macos/nv12_zero_device.h"
+#include "src/platform/macos/sc_video.h"
 
 // Avoid conflict between AVFoundation and libavutil both defining AVMediaType
 /**
@@ -133,6 +134,11 @@ namespace platf {
         return true;
       }];
 
+      if (!signal) {
+        BOOST_LOG(error) << "Failed to start display capture"sv;
+        return capture_e::error;
+      }
+
       // FIXME: We should time out if an image isn't returned for a while
       dispatch_semaphore_wait(signal, DISPATCH_TIME_FOREVER);
 
@@ -219,7 +225,7 @@ namespace platf {
         return false;
       }];
 
-      if (dispatch_semaphore_wait(signal, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0) {
+      if (signal && dispatch_semaphore_wait(signal, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0) {
         return 0;
       }
 
@@ -370,7 +376,18 @@ namespace platf {
     BOOST_LOG(debug) << "Active desktop bounds: "sv << display->env_offset_x << 'x' << display->env_offset_y << ' '
                      << display->env_logical_width << 'x' << display->env_logical_height;
 
-    display->av_capture = [[AVVideo alloc] initWithDisplay:display->display_id frameRate:config.framerate];
+    // MacShine: prefer ScreenCaptureKit, which also captures virtual displays reliably.
+    if ([SCVideo isAvailable]) {
+      display->av_capture = [[SCVideo alloc] initWithDisplay:display->display_id frameRate:config.framerate];
+      if (display->av_capture) {
+        BOOST_LOG(info) << "Using ScreenCaptureKit for display capture"sv;
+      } else {
+        BOOST_LOG(warning) << "ScreenCaptureKit capture unavailable, falling back to AVFoundation"sv;
+      }
+    }
+    if (!display->av_capture) {
+      display->av_capture = [[AVVideo alloc] initWithDisplay:display->display_id frameRate:config.framerate];
+    }
 
     if (!display->av_capture) {
       BOOST_LOG(error) << "Video setup failed."sv;

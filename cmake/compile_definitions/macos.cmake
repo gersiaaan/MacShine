@@ -35,6 +35,7 @@ list(APPEND SUNSHINE_EXTERNAL_LIBRARIES
         ${CORE_MEDIA_LIBRARY}
         ${CORE_VIDEO_LIBRARY}
         ${FOUNDATION_LIBRARY}
+        "-framework ScreenCaptureKit"
         ${IOKIT_LIBRARY}
         ${USER_NOTIFICATIONS_LIBRARY}
         ${VIDEO_TOOLBOX_LIBRARY})
@@ -58,9 +59,14 @@ set(PLATFORM_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/platform/macos/nv12_zero_device.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/nv12_zero_device.h"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/publish.cpp"
+        "${CMAKE_SOURCE_DIR}/src/platform/macos/sc_video.h"
+        "${CMAKE_SOURCE_DIR}/src/platform/macos/sc_video.m"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/virtual_display.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/virtual_display.h"
         "${CMAKE_SOURCE_DIR}/third-party/TPCircularBuffer/TPCircularBuffer.c"
         "${CMAKE_SOURCE_DIR}/third-party/TPCircularBuffer/TPCircularBuffer.h"
         ${APPLE_ENTITLEMENTS_FILE}
         ${APPLE_PLIST_FILE})
+
+# MacShine: the ScreenCaptureKit capture backend uses ARC (the rest of the macOS sources do not).
+set_source_files_properties("${CMAKE_SOURCE_DIR}/src/platform/macos/sc_video.m" PROPERTIES COMPILE_FLAGS "-fobjc-arc")
