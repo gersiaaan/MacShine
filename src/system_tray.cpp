@@ -300,7 +300,7 @@ namespace system_tray {
         // Tray menu labels currently use the project's English source strings.
         {.text = "Open Sunshine", .cb = tray_open_ui_cb},
         {.text = "-"},
-  #if defined(_WIN32) || defined(__APPLE__)
+  #if defined(_WIN32)  // MacShine: no Virtual HID Broker entry on macOS
         {.text = "Virtual HID Broker", .submenu = virtualhid_license_menu.data()},
         {.text = "-"},
   #endif

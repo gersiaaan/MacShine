@@ -72,7 +72,7 @@
       </div>
     </div>
     <!-- Virtual gamepad broker and license -->
-    <div class="card my-4 virtual-gamepad-card" v-if="platform === 'windows' || platform === 'macos'">
+    <div class="card my-4 virtual-gamepad-card" v-if="platform === 'windows'">
       <div class="card-body">
         <header class="virtual-gamepad-hero">
           <div class="virtual-gamepad-heading-icon" aria-hidden="true">

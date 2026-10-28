@@ -506,7 +506,7 @@ int main(int argc, char *argv[]) {
 
   if (tray_is_enabled && config::sunshine.system_tray) {
     BOOST_LOG(info) << "Starting system tray"sv;
-#if defined(_WIN32) || defined(__APPLE__)
+#if defined(_WIN32)  // MacShine: no Virtual HID Broker license checks or notifications on macOS
     system_tray::prepare_tray_virtualhid_license();
     system_tray::prepare_tray_virtualhid_driver();
 #endif
