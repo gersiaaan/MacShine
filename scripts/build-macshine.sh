@@ -42,7 +42,18 @@ APP_BUILT="$(find "$REPO/build" -maxdepth 2 -name 'Sunshine.app' -type d | head 
 [[ -n "$APP_BUILT" ]] || { echo "Sunshine.app not found under $REPO/build"; exit 1; }
 [[ -x "$APP_BUILT/Contents/MacOS/sunshine_vd_helper" ]] || { echo "Virtual display helper missing from the bundle"; exit 1; }
 
+# Optional LaunchAgent that keeps MacShine running (starts at login, restarts after a crash).
+AGENT_LABEL="$BUNDLE_ID"
+AGENT_PLIST="$HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
+AGENT_DOMAIN="gui/$(id -u)"
+AGENT_LOADED=0
+launchctl print "$AGENT_DOMAIN/$AGENT_LABEL" >/dev/null 2>&1 && AGENT_LOADED=1
+
 say "Installing as $APP_DEST"
+if [[ $AGENT_LOADED -eq 1 ]]; then
+  # Unload first, or launchd restarts MacShine while the bundle is being replaced.
+  launchctl bootout "$AGENT_DOMAIN/$AGENT_LABEL" 2>/dev/null || true
+fi
 osascript -e 'tell application id "'"$BUNDLE_ID"'" to quit' >/dev/null 2>&1 || true
 pkill -f "$APP_DEST/Contents/MacOS/" 2>/dev/null || true
 rm -rf "$APP_DEST"
@@ -98,6 +109,11 @@ security unlock-keychain -p "$(cat "$SIGN_DIR/keychain-password")" "$SIGN_KEYCHA
 say "Signing ($SIGN_IDENTITY)"
 codesign --force --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID.vd-helper" "$APP_DEST/Contents/MacOS/sunshine_vd_helper"
 codesign --force --deep --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID" "$APP_DEST"
+
+if [[ $AGENT_LOADED -eq 1 ]]; then
+  say "Starting MacShine again ($AGENT_LABEL)"
+  launchctl bootstrap "$AGENT_DOMAIN" "$AGENT_PLIST"
+fi
 
 say "Done: $APP_DEST"
 cat <<EOF
