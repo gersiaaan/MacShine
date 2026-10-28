@@ -72,6 +72,12 @@ static NSUInteger g_scale;
 static BOOL g_make_primary;
 static BOOL g_ready_sent;
 static int g_mode_attempts;
+// Every display reconfiguration makes macOS fade the screens. Enforcement after the display is
+// ready must therefore be rare and bounded, or the Mac looks frozen and capture never settles.
+static int g_mirror_fixes;
+static int g_mode_fixes;
+static int g_primary_fixes;
+static const int MAX_FIXES_AFTER_READY = 2;
 
 static void log_line(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
 
@@ -116,6 +122,9 @@ static BOOL display_is_active(CGDirectDisplayID display_id) {
 static void ensure_not_mirrored(void) {
   const CGDirectDisplayID display_id = g_display.displayID;
   if (CGDisplayIsInMirrorSet(display_id) != 1) {
+    return;
+  }
+  if (g_ready_sent && g_mirror_fixes++ >= MAX_FIXES_AFTER_READY) {
     return;
   }
 
@@ -187,6 +196,21 @@ static BOOL select_target_mode(void) {
     CGDisplayModeRelease(current);
   }
 
+  // Before ready: at most a few mode switches, spaced out, so the screen does not keep fading.
+  static int pre_ready_applies = 0;
+  if (!active && !g_ready_sent && (pre_ready_applies >= 3 || g_mode_attempts % 4 != 0)) {
+    CFRelease(modes);
+    return NO;
+  }
+  if (!active && !g_ready_sent) {
+    ++pre_ready_applies;
+  }
+
+  if (!active && g_ready_sent && g_mode_fixes++ >= MAX_FIXES_AFTER_READY) {
+    CFRelease(modes);
+    return NO;
+  }
+
   if (!active) {
     CGDisplayConfigRef config = NULL;
     if (CGBeginDisplayConfiguration(&config) == kCGErrorSuccess) {
@@ -209,6 +233,9 @@ static BOOL select_target_mode(void) {
 static void make_main_display(void) {
   const CGDirectDisplayID display_id = g_display.displayID;
   if (CGMainDisplayID() == display_id) {
+    return;
+  }
+  if (g_ready_sent && g_primary_fixes++ >= MAX_FIXES_AFTER_READY) {
     return;
   }
 
@@ -424,7 +451,7 @@ int main(int argc, const char *argv[]) {
       tick();
       if (g_ready_sent && !slowed) {
         slowed = YES;
-        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), 2 * NSEC_PER_SEC, 200 * NSEC_PER_MSEC);
+        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), 5 * NSEC_PER_SEC, 500 * NSEC_PER_MSEC);
       }
     });
     dispatch_resume(timer);
