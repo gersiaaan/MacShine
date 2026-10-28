@@ -250,7 +250,8 @@
         }
 
         if (this.platform === 'macos') {
-          return this.buildMacosVirtualInputNotice();
+          // MacShine: no Virtual HID Broker notice on macOS
+          return null;
         }
 
         if (this.platform !== 'windows' || !this.virtualhid || !this.vigembus) {
