@@ -55,16 +55,56 @@ for key in CFBundleName CFBundleDisplayName; do
 done
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$PLIST"
 
-say "Signing (ad hoc)"
-codesign --force --sign - --identifier "$BUNDLE_ID.vd-helper" "$APP_DEST/Contents/MacOS/sunshine_vd_helper"
-codesign --force --deep --sign - --identifier "$BUNDLE_ID" "$APP_DEST"
+# Sign with a local self-signed certificate instead of ad hoc: macOS ties Screen Recording and
+# Accessibility to the signing certificate, so the permissions survive rebuilds. The certificate
+# lives in its own keychain file; the login keychain, trust settings and keychain search list are
+# left untouched.
+SIGN_DIR="$HOME/Library/Application Support/MacShine/signing"
+SIGN_KEYCHAIN="$SIGN_DIR/macshine-signing.keychain-db"
+SIGN_IDENTITY="MacShine Local Signing"
+if [[ ! -f "$SIGN_KEYCHAIN" ]]; then
+  say "Creating local signing certificate ($SIGN_IDENTITY)"
+  mkdir -p "$SIGN_DIR"
+  chmod 700 "$SIGN_DIR"
+  /usr/bin/openssl rand -hex 24 > "$SIGN_DIR/keychain-password"
+  chmod 600 "$SIGN_DIR/keychain-password"
+  SIGN_PASSWORD="$(cat "$SIGN_DIR/keychain-password")"
+  SIGN_TMP="$(mktemp -d)"
+  cat > "$SIGN_TMP/cert.cnf" <<EOF
+[req]
+distinguished_name=dn
+x509_extensions=ext
+prompt=no
+[dn]
+CN=$SIGN_IDENTITY
+[ext]
+basicConstraints=critical,CA:false
+keyUsage=critical,digitalSignature
+extendedKeyUsage=critical,codeSigning
+EOF
+  /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config "$SIGN_TMP/cert.cnf" \
+    -keyout "$SIGN_TMP/key.pem" -out "$SIGN_TMP/cert.pem" 2>/dev/null
+  /usr/bin/openssl pkcs12 -export -name "$SIGN_IDENTITY" -inkey "$SIGN_TMP/key.pem" -in "$SIGN_TMP/cert.pem" \
+    -out "$SIGN_TMP/identity.p12" -passout "pass:$SIGN_PASSWORD"
+  security create-keychain -p "$SIGN_PASSWORD" "$SIGN_KEYCHAIN"
+  security set-keychain-settings "$SIGN_KEYCHAIN"
+  security unlock-keychain -p "$SIGN_PASSWORD" "$SIGN_KEYCHAIN"
+  security import "$SIGN_TMP/identity.p12" -k "$SIGN_KEYCHAIN" -P "$SIGN_PASSWORD" -T /usr/bin/codesign >/dev/null
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$SIGN_PASSWORD" "$SIGN_KEYCHAIN" >/dev/null
+  rm -rf "$SIGN_TMP"
+fi
+security unlock-keychain -p "$(cat "$SIGN_DIR/keychain-password")" "$SIGN_KEYCHAIN"
+
+say "Signing ($SIGN_IDENTITY)"
+codesign --force --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID.vd-helper" "$APP_DEST/Contents/MacOS/sunshine_vd_helper"
+codesign --force --deep --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID" "$APP_DEST"
 
 say "Done: $APP_DEST"
 cat <<EOF
 
 Next:
   1. System Settings > Privacy & Security: allow MacShine under
-     "Screen & System Audio Recording" and "Accessibility" (after every rebuild).
+     "Screen & System Audio Recording" and "Accessibility" (once; rebuilds keep the permissions).
   2. Quit and reopen MacShine.
   3. Web UI: https://localhost:47990
 Logs live: "$APP_DEST/Contents/MacOS/Sunshine"
