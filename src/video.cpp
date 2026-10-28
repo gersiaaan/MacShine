@@ -2761,6 +2761,7 @@ namespace video {
         KITTY_WHILE_LOOP(auto pos = std::begin(synced_sessions), pos != std::end(synced_sessions), {
           auto ctx = pos->ctx;
           if (ctx->shutdown_event->peek()) {
+            BOOST_LOG(debug) << "Video session shutdown requested, leaving synced capture"sv;
             // Let waiting thread know it can delete shutdown_event
             ctx->join_event->raise(true);
 
@@ -2862,7 +2863,9 @@ namespace video {
 
     std::vector<std::string> display_names;
     int display_p = -1;
-    while (encode_run_sync(synced_session_ctxs, ctx, display_names, display_p) == encode_e::reinit) {}
+    auto status = encode_e::reinit;
+    while ((status = encode_run_sync(synced_session_ctxs, ctx, display_names, display_p)) == encode_e::reinit) {}
+    BOOST_LOG(debug) << "Synced capture thread ended with status "sv << (int) status;
   }
 
   /**
