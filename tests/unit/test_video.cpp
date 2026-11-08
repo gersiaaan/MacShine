@@ -540,3 +540,10 @@ TEST(SoftwareEncoderConversion, Bgr0AndNv12) {
   fallback_nv12_img.row_pitch = w;
   EXPECT_EQ(device.convert(fallback_nv12_img), 0);
 }
+
+TEST(VideoLowDelayFlagTest, OnlyVideoToolboxRunsWithoutLowDelay) {
+  EXPECT_FALSE(video::use_low_delay_flag("videotoolbox"));
+  EXPECT_TRUE(video::use_low_delay_flag("nvenc"));
+  EXPECT_TRUE(video::use_low_delay_flag("vaapi"));
+  EXPECT_TRUE(video::use_low_delay_flag("software"));
+}

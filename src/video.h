@@ -479,6 +479,18 @@ namespace video {
 #endif
 
   /**
+   * @brief Whether an encoder is opened with AV_CODEC_FLAG_LOW_DELAY.
+   *
+   * VideoToolbox maps the flag to its low-latency rate control, which encodes a 2496x1560 HEVC
+   * frame in about 13.6 ms instead of 8.7 ms on an M1 Max. Its frames are completed one by one
+   * anyway (see src/platform/macos/vt_session.h), so it runs without the flag.
+   *
+   * @param encoder_name Name of the encoder, such as "videotoolbox".
+   * @return False for VideoToolbox, true for every other encoder.
+   */
+  bool use_low_delay_flag(std::string_view encoder_name);
+
+  /**
    * @brief Encoded packet wrapper used by the streaming pipeline.
    */
   struct packet_raw_t {
