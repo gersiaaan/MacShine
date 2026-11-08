@@ -3318,13 +3318,14 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
         <td colspan="2">
             Realtime encoding.
             @note{This option only applies when using macOS.}
-            @warning{Disabling realtime encoding might result in a delayed frame encoding or frame drop.}
+            @note{Disabled by default: each frame is completed as soon as it is sent, and the realtime hint
+            makes VideoToolbox pace frames to the stream rate, which adds about one frame interval of latency.}
         </td>
     </tr>
     <tr>
         <td>Default</td>
         <td colspan="2">@code{}
-            enabled
+            disabled
             @endcode</td>
     </tr>
     <tr>

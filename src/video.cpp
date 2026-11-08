@@ -1962,6 +1962,10 @@ namespace video {
    * @param encode_device AVCodec encode device.
    * @return AVCodec encode session, or nullptr on failure.
    */
+  bool use_low_delay_flag(std::string_view encoder_name) {
+    return encoder_name != "videotoolbox"sv;
+  }
+
   std::unique_ptr<avcodec_encode_session_t> make_avcodec_encode_session(
     platf::display_t *disp,
     const encoder_t &encoder,
@@ -2079,7 +2083,10 @@ namespace video {
 
       // We forcefully reset the flags to avoid clash on reuse of AVCodecContext
       ctx->flags = 0;
-      ctx->flags |= AV_CODEC_FLAG_CLOSED_GOP | AV_CODEC_FLAG_LOW_DELAY;
+      ctx->flags |= AV_CODEC_FLAG_CLOSED_GOP;
+      if (use_low_delay_flag(encoder.name)) {
+        ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+      }
 
       ctx->flags2 |= AV_CODEC_FLAG2_FAST;
 

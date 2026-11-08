@@ -58,6 +58,12 @@ namespace platf::virtual_display {
   std::optional<std::string> create(const request_t &request);
 
   /**
+   * @brief Wake the Mac's displays the way local input would, so a stream does not start black.
+   * @return True when macOS accepted the user activity.
+   */
+  bool wake_for_stream();
+
+  /**
    * @brief Remove the virtual display if one exists. Safe to call at any time.
    */
   void destroy();

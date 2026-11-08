@@ -237,6 +237,10 @@ TEST(MacosVirtualDisplayTest, HelperArgumentsDoubleTheStreamRate) {
   EXPECT_EQ(args[6], "100");
 }
 
+TEST(MacosVirtualDisplayTest, WakeForStreamDeclaresUserActivity) {
+  EXPECT_TRUE(platf::virtual_display::wake_for_stream());
+}
+
 TEST(MacosVirtualDisplayTest, SizeMessageCarriesPixelsAndPoints) {
   EXPECT_EQ(platf::virtual_display::size_message(2496, 1560, 1248, 780), "SIZE 2496 1560 1248 780\n");
 }

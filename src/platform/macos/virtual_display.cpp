@@ -24,6 +24,7 @@
 
 // platform includes
 #include <fcntl.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
 #include <mach-o/dyld.h>
 #include <spawn.h>
 #include <sys/wait.h>
@@ -298,7 +299,22 @@ namespace platf::virtual_display {
     return hash == 0 ? 1 : hash;
   }
 
+  bool wake_for_stream() {
+    IOPMAssertionID assertion {kIOPMNullAssertionID};
+    if (IOPMAssertionDeclareUserActivity(CFSTR("MacShine stream started"), kIOPMUserActiveLocal, &assertion) != kIOReturnSuccess) {
+      return false;
+    }
+    IOPMAssertionRelease(assertion);
+    return true;
+  }
+
   std::optional<std::string> create(const request_t &request) {
+    // An asleep Mac shows a black virtual display until someone touches the Mac; a connecting
+    // client counts as that activity, so the stream starts with a picture (the login window if locked).
+    if (!wake_for_stream()) {
+      BOOST_LOG(warning) << "Could not wake the Mac's displays for the stream"sv;
+    }
+
     std::lock_guard lock {g_mutex};
 
     // A client resuming with the same settings keeps its display, so windows stay where they are.

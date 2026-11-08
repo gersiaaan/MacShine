@@ -21,6 +21,7 @@
 #include "src/platform/macos/av_img_t.h"
 #include "src/platform/macos/av_video.h"
 #include "src/platform/macos/capture_color.h"
+#include "src/platform/macos/frame_timing.h"
 #include "src/platform/macos/misc.h"
 #include "src/platform/macos/nv12_zero_device.h"
 #include "src/platform/macos/sc_video.h"
@@ -96,6 +97,8 @@ namespace platf {
     capture_e capture(const push_captured_image_cb_t &push_captured_image_cb, const pull_free_image_cb_t &pull_free_image_cb, bool *cursor) override {
       auto resized = std::make_shared<std::atomic<bool>>(false);
       auto next_size_check = std::make_shared<std::chrono::steady_clock::time_point>(std::chrono::steady_clock::now());
+      // Time from macOS composing a frame until it reaches Sunshine.
+      auto delivery_logger = std::make_shared<logging::min_max_avg_periodic_logger<double>>(debug, "Capture delivery latency", "ms");
 
       auto signal = [av_capture capture:^(CMSampleBufferRef sampleBuffer) {
         // MacShine: the desktop size can be changed in System Settings during a stream. Reinitialize
@@ -135,6 +138,10 @@ namespace platf {
         img_out->height = (int) CVPixelBufferGetHeight(new_pixel_buffer->buf);
         img_out->row_pitch = (int) CVPixelBufferGetBytesPerRow(new_pixel_buffer->buf);
         img_out->pixel_pitch = img_out->row_pitch / img_out->width;
+        // Lets Moonlight show the host processing latency.
+        const auto delivered {std::chrono::steady_clock::now()};
+        img_out->frame_timestamp = frame_timing::capture_timestamp(CMSampleBufferGetPresentationTimeStamp(sampleBuffer), delivered);
+        delivery_logger->collect_and_log(std::chrono::duration<double, std::milli>(delivered - *img_out->frame_timestamp).count());
 
         old_data_retainer = nullptr;
 

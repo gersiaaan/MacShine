@@ -779,7 +779,7 @@ namespace config {
     {
       0,
       0,
-      1,
+      0,  // realtime: off; it paces encoding to the frame rate (about one frame interval per frame)
       -1,
     },  // vt
 
