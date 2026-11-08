@@ -112,6 +112,21 @@ const config = ref(props.config)
                   v-model="config.macos_virtual_display_hidpi"
                   default="true"
         ></Checkbox>
+        <div class="mb-3">
+          <label for="macos_virtual_display_scale" class="form-label">{{ $t('config.macos_virtual_display_scale') }}</label>
+          <select id="macos_virtual_display_scale" class="form-select" v-model="config.macos_virtual_display_scale">
+            <option value="75">{{ $t('config.macos_virtual_display_scale_larger', { percent: 75 }) }}</option>
+            <option value="85">{{ $t('config.macos_virtual_display_scale_larger', { percent: 85 }) }}</option>
+            <option value="90">{{ $t('config.macos_virtual_display_scale_larger', { percent: 90 }) }}</option>
+            <option value="100">{{ $t('config.macos_virtual_display_scale_default') }}</option>
+            <option value="115">{{ $t('config.macos_virtual_display_scale_more_space', { percent: 115 }) }}</option>
+            <option value="130">{{ $t('config.macos_virtual_display_scale_more_space', { percent: 130 }) }}</option>
+            <option value="150">{{ $t('config.macos_virtual_display_scale_more_space', { percent: 150 }) }}</option>
+            <option value="175">{{ $t('config.macos_virtual_display_scale_more_space', { percent: 175 }) }}</option>
+            <option value="200">{{ $t('config.macos_virtual_display_scale_more_space', { percent: 200 }) }}</option>
+          </select>
+          <div class="form-text">{{ $t('config.macos_virtual_display_scale_desc') }}</div>
+        </div>
         <Checkbox class="mb-3"
                   id="macos_virtual_display_primary"
                   locale-prefix="config"
