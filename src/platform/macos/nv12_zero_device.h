@@ -50,11 +50,12 @@ namespace platf {
      *
      * @param capture_display Display object or identifier associated with the operation.
      * @param pix_fmt Sunshine pixel format to convert or allocate for.
+     * @param full_range Whether frames are captured in full range instead of video range.
      * @param set_resolution Callback used to resize the AVFoundation capture output.
      * @param pixel_format_fn Pixel format.
      * @return 0 on success; nonzero or negative platform status on failure.
      */
-    int init(AVVideo *capture_display, pix_fmt_e pix_fmt, resolution_fn_t set_resolution, const pixel_format_fn_t &pixel_format_fn);
+    int init(AVVideo *capture_display, pix_fmt_e pix_fmt, bool full_range, resolution_fn_t set_resolution, const pixel_format_fn_t &pixel_format_fn);
 
     /**
      * @brief Forward a captured AVFoundation frame to FFmpeg without copying.

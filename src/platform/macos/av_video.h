@@ -34,6 +34,18 @@ struct CaptureSession {
  */
 @property (nonatomic, assign) OSType pixelFormat;
 /**
+ * @brief RGB to YCbCr matrix for YCbCr pixel formats, or NULL for the capture default.
+ *
+ * Holds a constant CoreVideo matrix name, such as kCVImageBufferYCbCrMatrix_ITU_R_709_2.
+ */
+@property (nonatomic, assign) CFStringRef colorMatrix;
+/**
+ * @brief RGB color space frames are converted into, or NULL for the display's own color space.
+ *
+ * Holds a constant CoreGraphics color space name, such as kCGColorSpaceSRGB.
+ */
+@property (nonatomic, assign) CFStringRef colorSpaceName;
+/**
  * @brief Frame width property.
  */
 @property (nonatomic, assign) int frameWidth;

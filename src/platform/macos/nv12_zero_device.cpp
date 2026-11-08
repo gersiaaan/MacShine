@@ -7,6 +7,7 @@
 
 // local includes
 #include "src/platform/macos/av_img_t.h"
+#include "src/platform/macos/capture_color.h"
 #include "src/platform/macos/nv12_zero_device.h"
 #include "src/video.h"
 
@@ -64,8 +65,8 @@ namespace platf {
     return 0;
   }
 
-  int nv12_zero_device::init(AVVideo *capture_display, pix_fmt_e pix_fmt, resolution_fn_t set_resolution, const pixel_format_fn_t &pixel_format_fn) {
-    pixel_format_fn(capture_display, pix_fmt == pix_fmt_e::nv12 ? kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange : kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange);
+  int nv12_zero_device::init(AVVideo *capture_display, pix_fmt_e pix_fmt, bool full_range, resolution_fn_t set_resolution, const pixel_format_fn_t &pixel_format_fn) {
+    pixel_format_fn(capture_display, capture_color::pixel_format(pix_fmt != pix_fmt_e::nv12, full_range));
 
     this->display = capture_display;
     this->resolution_fn = std::move(set_resolution);
