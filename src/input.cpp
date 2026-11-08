@@ -13,6 +13,7 @@ extern "C" {
 #include <bitset>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <list>
@@ -326,6 +327,9 @@ namespace input {
 
     int32_t accumulated_vscroll_delta {};  ///< Accumulated vscroll delta.
     int32_t accumulated_hscroll_delta {};  ///< Accumulated hscroll delta.
+
+    scroll_filter_t vscroll_filter;  ///< Cleans up vertical touchpad scrolling.
+    scroll_filter_t hscroll_filter;  ///< Cleans up horizontal touchpad scrolling.
   };
 
   /**
@@ -1258,6 +1262,49 @@ namespace input {
     update_shortcutFlags(*input, keyCode, release);
   }
 
+  int scroll_filter_t::filter(int delta, std::chrono::steady_clock::time_point now) {
+    const int magnitude {std::abs(delta)};
+    const bool recent {last_time != std::chrono::steady_clock::time_point {} && now - last_time <= RECENT};
+    if (!recent) {
+      peak = 0;
+      edge_level = 0;
+    }
+    const int reference {recent && last_magnitude > 0 ? last_magnitude : WHEEL_DELTA};
+    last_time = now;
+
+    // Fingers still resting at the edge.
+    if (edge_level > 0) {
+      if (magnitude >= edge_level * (1.0 - EDGE_BAND) && magnitude <= edge_level * (1.0 + EDGE_BAND)) {
+        return 0;
+      }
+      edge_level = 0;
+    }
+
+    int result {delta};
+    const bool spike {magnitude > SPIKE_MIN && magnitude > SPIKE_FACTOR * reference};
+    const bool edge {recent && magnitude >= EDGE_MIN && magnitude <= SPIKE_MIN && magnitude > EDGE_FACTOR * reference};
+    if (spike || edge) {
+      // Keep only the size of the recent packets.
+      const int limit {std::max(std::min(reference, magnitude), 1)};
+      result = delta < 0 ? -limit : limit;
+      if (edge) {
+        edge_level = magnitude;
+      }
+      BOOST_LOG(debug) << "Limited a scroll "sv << (edge ? "edge stream"sv : "spike"sv) << " of "sv << delta << " to "sv << result;
+    } else if (recent && peak >= TAIL_AFTER && magnitude <= TAIL_MAX) {
+      // Coasting after a fast gesture.
+      last_magnitude = magnitude;
+      return 0;
+    }
+
+    last_magnitude = std::abs(result);
+    if (recent) {
+      // The first packet of a Windows gesture is often large even when scrolling slowly; skip it.
+      peak = std::max(peak, last_magnitude);
+    }
+    return result;
+  }
+
   /**
    * @brief Called to pass a vertical scroll message the platform backend.
    * @param input The input context pointer.
@@ -1268,10 +1315,14 @@ namespace input {
       return;
     }
 
+    const int amount {input->vscroll_filter.filter(util::endian::big(packet->scrollAmt1), std::chrono::steady_clock::now())};
+    if (amount == 0) {
+      return;
+    }
     if (config::input.high_resolution_scrolling) {
-      platf::scroll(platf_input, util::endian::big(packet->scrollAmt1));
+      platf::scroll(platf_input, amount);
     } else {
-      input->accumulated_vscroll_delta += util::endian::big(packet->scrollAmt1);
+      input->accumulated_vscroll_delta += amount;
       auto full_ticks = input->accumulated_vscroll_delta / WHEEL_DELTA;
       if (full_ticks) {
         // Send any full ticks that have accumulated and store the rest
@@ -1291,10 +1342,14 @@ namespace input {
       return;
     }
 
+    const int amount {input->hscroll_filter.filter(util::endian::big(packet->scrollAmount), std::chrono::steady_clock::now())};
+    if (amount == 0) {
+      return;
+    }
     if (config::input.high_resolution_scrolling) {
-      platf::hscroll(platf_input, util::endian::big(packet->scrollAmount));
+      platf::hscroll(platf_input, amount);
     } else {
-      input->accumulated_hscroll_delta += util::endian::big(packet->scrollAmount);
+      input->accumulated_hscroll_delta += amount;
       auto full_ticks = input->accumulated_hscroll_delta / WHEEL_DELTA;
       if (full_ticks) {
         // Send any full ticks that have accumulated and store the rest

@@ -5,6 +5,7 @@
 #pragma once
 
 // standard includes
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -234,4 +235,44 @@ namespace input {
    * @return The major and minor axis pair.
    */
   std::pair<float, float> scale_client_contact_area(const std::pair<float, float> &val, uint16_t rotation, const std::pair<float, float> &scalar);
+
+  /**
+   * @brief Cleans up scrolling from Windows precision touchpads before it reaches the host.
+   *
+   * Recorded touchpad data shows three habits a Mac trackpad does not have:
+   * - Spikes: a gesture can end with one packet worth some twenty wheel detents. Such a packet is
+   *   limited to the size of the packets just before it.
+   * - Edge streams: while the fingers rest at the top or bottom edge, Windows keeps sending
+   *   packets of the same, large size about every 7 ms, so the page races away. A sudden jump to a
+   *   large multiple of the slow packets just before starts such a stream; it is dropped while the packets stay
+   *   about that size, so scrolling stops at the edge.
+   * - Long coasting: after a fast gesture, Windows sends tiny packets for a second or longer. These
+   *   are dropped once the gesture had real speed.
+   *
+   * Wheel detents, fast flicks and gestures that speed up gradually pass unchanged.
+   */
+  struct scroll_filter_t {
+    static constexpr int SPIKE_MIN {480};  ///< Packets up to four wheel detents are never limited as spikes.
+    static constexpr int SPIKE_FACTOR {8};  ///< A spike is this many times larger than the recent packets.
+    static constexpr int EDGE_FACTOR {10};  ///< An edge stream starts this many times larger than the recent packets.
+    static constexpr int EDGE_MIN {120};  ///< Edge streams consist of packets of at least one detent.
+    static constexpr double EDGE_BAND {0.3};  ///< Edge stream packets stay within this fraction of the first one.
+    static constexpr int TAIL_MAX {6};  ///< Coasting packets this small are dropped ...
+    static constexpr int TAIL_AFTER {30};  ///< ... once the gesture reached at least this size.
+    static constexpr std::chrono::milliseconds RECENT {250};  ///< Packets within this time count as the same gesture.
+
+    int last_magnitude {};  ///< Size of the last packet seen.
+    int peak {};  ///< Largest packet passed on in the current gesture, after its first one.
+    int edge_level {};  ///< Size of the edge stream being dropped, or 0.
+    std::chrono::steady_clock::time_point last_time {};  ///< When the last packet arrived.
+
+    /**
+     * @brief Filter one scroll packet.
+     *
+     * @param delta Scroll distance in high-resolution wheel units (120 per detent).
+     * @param now Arrival time of the packet.
+     * @return The distance to apply; 0 drops the packet.
+     */
+    int filter(int delta, std::chrono::steady_clock::time_point now);
+  };
 }  // namespace input

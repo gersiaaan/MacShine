@@ -68,6 +68,8 @@ set(PLATFORM_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/platform/macos/sc_video.m"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/stop_hotkey.h"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/stop_hotkey.mm"
+        "${CMAKE_SOURCE_DIR}/src/platform/macos/trackpad_scroll.cpp"
+        "${CMAKE_SOURCE_DIR}/src/platform/macos/trackpad_scroll.h"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/virtual_display.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/vt_session.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/macos/vt_session.h"
