@@ -23,6 +23,10 @@
 #include "src/logging.h"
 #include "virtualhid_input.h"
 
+#ifdef __APPLE__
+  #include "src/platform/macos/trackpad_scroll.h"
+#endif
+
 using namespace std::literals;
 
 namespace platf::virtualhid {
@@ -927,12 +931,23 @@ namespace platf::virtualhid {
   }
 
   void scroll(input_context_t &context, int high_res_distance) {
+#ifdef __APPLE__
+    // Post as a trackpad gesture with phases, so macOS scrolls smoothly and bounces at page ends.
+    if (context.mouse && platf::trackpad_scroll::enabled() && platf::trackpad_scroll::post(high_res_distance, 0)) {
+      return;
+    }
+#endif
     if (context.mouse) {
       log_failure("submit libvirtualhid vertical scroll"sv, context.mouse->vertical_scroll(high_res_distance));
     }
   }
 
   void hscroll(input_context_t &context, int high_res_distance) {
+#ifdef __APPLE__
+    if (context.mouse && platf::trackpad_scroll::enabled() && platf::trackpad_scroll::post(0, high_res_distance)) {
+      return;
+    }
+#endif
     if (context.mouse) {
       log_failure("submit libvirtualhid horizontal scroll"sv, context.mouse->horizontal_scroll(high_res_distance));
     }

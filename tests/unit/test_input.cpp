@@ -642,3 +642,74 @@ TEST_F(InputGamepadSessionTest, RetargetsRelativeMouseFromLatestStreamGeometry) 
   EXPECT_EQ(mouse_event.y, 9);
   EXPECT_EQ(context().mouse_viewport.offset_x, 0);
 }
+
+namespace {
+  /**
+   * @brief Feed timed packets through a scroll filter.
+   *
+   * @param filter Filter to use.
+   * @param start Time of the first packet.
+   * @param packets Pairs of milliseconds after start and packet value.
+   * @return Filtered values in order.
+   */
+  std::vector<int> run_scroll_filter(input::scroll_filter_t &filter, std::chrono::steady_clock::time_point start, const std::vector<std::pair<int, int>> &packets) {
+    std::vector<int> out;
+    for (const auto &[ms, value] : packets) {
+      out.push_back(filter.filter(value, start + std::chrono::milliseconds {ms}));
+    }
+    return out;
+  }
+}  // namespace
+
+TEST(ScrollFilterTest, GestureEndSpikeIsLimited) {
+  input::scroll_filter_t filter;
+  // Recorded from a Windows precision touchpad: steady packets, then one spike ~85 ms later.
+  const auto out {run_scroll_filter(filter, std::chrono::steady_clock::now(), {{0, 164}, {15, 165}, {30, 144}, {114, 2361}})};
+  EXPECT_EQ(out, (std::vector<int> {164, 165, 144, 144}));
+}
+
+TEST(ScrollFilterTest, EdgeStreamIsDroppedUntilItChanges) {
+  input::scroll_filter_t filter;
+  // Recorded: a slow gesture runs out, then the fingers reach the edge of the touchpad.
+  const auto out {run_scroll_filter(
+    filter,
+    std::chrono::steady_clock::now(),
+    {{0, -15}, {8, -12}, {16, -9}, {24, -6}, {39, -3}, {78, -173}, {84, -176}, {90, -200}, {97, -150}, {104, -174}, {300, -79}}
+  )};
+  // The edge stream is reduced to the slow scrolling before it; the next packet after it passes.
+  EXPECT_EQ(out, (std::vector<int> {-15, -12, -9, -6, -3, -3, 0, 0, 0, 0, -79}));
+}
+
+TEST(ScrollFilterTest, FastFlickPasses) {
+  input::scroll_filter_t filter;
+  // Recorded: a fast flick that speeds up and slows down again.
+  const std::vector<std::pair<int, int>> flick {{0, 229}, {7, 114}, {14, 159}, {23, 188}, {27, 215}, {37, 244}, {43, 456}, {52, 288}, {57, 244}, {84, 132}, {95, 109}, {112, 476}, {134, 438}, {150, 423}, {170, 353}};
+  const auto out {run_scroll_filter(filter, std::chrono::steady_clock::now(), flick)};
+  for (std::size_t index = 0; index < flick.size(); ++index) {
+    EXPECT_EQ(out[index], flick[index].second) << "packet " << index;
+  }
+}
+
+TEST(ScrollFilterTest, CoastingTailIsDroppedButSlowScrollingPasses) {
+  input::scroll_filter_t filter;
+  const auto start {std::chrono::steady_clock::now()};
+  // Fast gesture, then Windows coasts with tiny packets.
+  auto out {run_scroll_filter(filter, start, {{0, -73}, {7, -30}, {14, -35}, {21, -18}, {28, -6}, {35, -3}, {50, -3}})};
+  EXPECT_EQ(out, (std::vector<int> {-73, -30, -35, -18, 0, 0, 0}));
+
+  // Slow scrolling: only the first packet of the gesture is large, so small packets pass.
+  input::scroll_filter_t slow;
+  out = run_scroll_filter(slow, start, {{0, -76}, {7, -9}, {14, -11}, {21, -6}, {28, -3}, {35, -6}});
+  EXPECT_EQ(out, (std::vector<int> {-76, -9, -11, -6, -3, -6}));
+}
+
+TEST(ScrollFilterTest, WheelDetentsPassAndSpikesAfterAPauseAreLimited) {
+  input::scroll_filter_t filter;
+  const auto start {std::chrono::steady_clock::now()};
+  auto out {run_scroll_filter(filter, start, {{0, 120}, {10, -120}, {5000, 480}, {6000, 240}})};
+  EXPECT_EQ(out, (std::vector<int> {120, -120, 480, 240}));
+
+  input::scroll_filter_t paused;
+  out = run_scroll_filter(paused, start, {{0, -2400}, {10, 150}});
+  EXPECT_EQ(out, (std::vector<int> {-120, 150}));
+}
