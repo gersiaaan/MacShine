@@ -520,6 +520,12 @@ static void blacken_display(CGDirectDisplayID display) {
  * @param count Number of candidates.
  */
 static void dim_builtin_display(const CGDirectDisplayID *displays, uint32_t count) {
+  if (g_dimmed_display != kCGNullDirectDisplay) {
+    // Already dimmed earlier: keep the recorded brightness, only apply the darkness again.
+    set_brightness(g_dimmed_display, 0);
+    blacken_display(g_dimmed_display);
+    return;
+  }
   const get_brightness_fn get = (get_brightness_fn) display_services_symbol("DisplayServicesGetBrightness");
   for (uint32_t i = 0; i < count; ++i) {
     float brightness = -1;
@@ -638,6 +644,28 @@ static void mirror_other_displays(const CGDirectDisplayID *displays, uint32_t co
   }
   const CGError err = CGCompleteDisplayConfiguration(config, kCGConfigureForSession);
   log_line(@"mirroring %u host display(s) to the virtual display instead (result %d)", count, err);
+}
+
+/**
+ * Make every host display dark as soon as the virtual display is active. Turning the displays off
+ * only happens once the virtual display is ready, a second or two later; until then the host would
+ * keep showing its desktop. Display reconfigurations reset brightness and color tables, so this
+ * runs on every tick until the displays are off. Darkening before the virtual display exists keeps
+ * macOS from making it ready, so it waits for that.
+ */
+static void darken_host_displays(void) {
+  if (!display_is_active(g_display.displayID)) {
+    return;
+  }
+  CGDirectDisplayID targets[16];
+  const uint32_t count = other_active_displays(targets);
+  if (count == 0) {
+    return;
+  }
+  dim_builtin_display(targets, count);
+  for (uint32_t i = 0; i < count; ++i) {
+    blacken_display(targets[i]);
+  }
 }
 
 /** Turn every active display except the virtual one off, so the stream gets the whole desktop. */
@@ -770,6 +798,9 @@ static void send_ready_if_possible(BOOL mode_ok) {
 static void tick(void) {
   if (!g_display) {
     return;
+  }
+  if (g_disable_others && !g_others_disabled) {
+    darken_host_displays();
   }
   ensure_not_mirrored();
   const BOOL mode_ok = select_target_mode();
@@ -928,6 +959,9 @@ int main(int argc, const char *argv[]) {
       exit(3);
     };
 
+    // Every exit path below goes through exit() (returning from main included), which runs this.
+    atexit(restore_other_displays);
+
     g_display = [[CGVirtualDisplay alloc] initWithDescriptor:descriptor];
     if (!g_display || g_display.displayID == kCGNullDirectDisplay) {
       log_line(@"failed to create virtual display");
@@ -947,9 +981,6 @@ int main(int argc, const char *argv[]) {
       }
     }
     log_line(@"created display %u: %lux%lu points @%lux, %lu Hz, serial %lu, %d sizes, using %lu%%", g_display.displayID, (unsigned long) g_points_wide, (unsigned long) g_points_high, (unsigned long) g_scale, fps, serial, g_size_count, g_current_percent);
-
-    // Every exit path below goes through exit(), which runs this before the display goes away.
-    atexit(restore_other_displays);
 
     // Lifeline: Sunshine holds the write end of our stdin. EOF means it is gone.
     signal(SIGPIPE, SIG_IGN);
