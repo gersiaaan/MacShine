@@ -47,6 +47,8 @@ API_AVAILABLE(macos(12.3))
   size_t _streamWidth;
   size_t _streamHeight;
   OSType _streamPixelFormat;
+  CFStringRef _streamColorMatrix;
+  CFStringRef _streamColorSpaceName;
 }
 
 + (BOOL)isAvailable {
@@ -165,17 +167,27 @@ API_AVAILABLE(macos(12.3))
   const size_t width = (size_t) self.frameWidth;
   const size_t height = (size_t) self.frameHeight;
   const OSType pixelFormat = self.pixelFormat;
+  const CFStringRef colorMatrix = self.colorMatrix;
+  const CFStringRef colorSpaceName = self.colorSpaceName;
 
   SCStreamConfiguration *configuration = [[SCStreamConfiguration alloc] init];
   configuration.width = width;
   configuration.height = height;
   configuration.pixelFormat = pixelFormat;
+  // Convert with the matrix and into the color space the encoder signals, so the client decodes the
+  // colors that were captured instead of the display's wide-gamut values with another matrix.
+  if (colorMatrix) {
+    configuration.colorMatrix = colorMatrix;
+  }
+  if (colorSpaceName) {
+    configuration.colorSpaceName = colorSpaceName;
+  }
   configuration.minimumFrameInterval = self.minFrameDuration;
   configuration.showsCursor = YES;
   configuration.queueDepth = 5;
 
   if (_stream) {
-    if (_streamWidth == width && _streamHeight == height && _streamPixelFormat == pixelFormat) {
+    if (_streamWidth == width && _streamHeight == height && _streamPixelFormat == pixelFormat && _streamColorMatrix == colorMatrix && _streamColorSpaceName == colorSpaceName) {
       return YES;
     }
 
@@ -191,6 +203,8 @@ API_AVAILABLE(macos(12.3))
       return NO;
     }
     [self setStreamFormatWidth:width height:height pixelFormat:pixelFormat];
+    _streamColorMatrix = colorMatrix;
+    _streamColorSpaceName = colorSpaceName;
     return YES;
   }
 
@@ -215,6 +229,8 @@ API_AVAILABLE(macos(12.3))
   }
   _stream = stream;
   [self setStreamFormatWidth:width height:height pixelFormat:pixelFormat];
+  _streamColorMatrix = colorMatrix;
+  _streamColorSpaceName = colorSpaceName;
 
   // Idle screens produce no new frames; re-deliver the last frame so consumers never starve.
   _redeliverTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _queue);

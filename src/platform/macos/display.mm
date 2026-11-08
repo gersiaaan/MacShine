@@ -20,6 +20,7 @@
 #include "src/platform/common.h"
 #include "src/platform/macos/av_img_t.h"
 #include "src/platform/macos/av_video.h"
+#include "src/platform/macos/capture_color.h"
 #include "src/platform/macos/misc.h"
 #include "src/platform/macos/nv12_zero_device.h"
 #include "src/platform/macos/sc_video.h"
@@ -76,11 +77,6 @@ namespace platf {
       }
       return bounds;
     }
-
-    OSType videotoolbox_pixel_format(const video::config_t &config) {
-      const auto colorspace {video::colorspace_from_client_config(config, false)};
-      return colorspace.bit_depth == 10 ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
-    }
   }  // namespace
 
   /**
@@ -89,6 +85,7 @@ namespace platf {
   struct av_display_t: public display_t {
     AVVideo *av_capture {};  ///< AV capture.
     CGDirectDisplayID display_id {};  ///< Display ID.
+    bool capture_full_range {};  ///< Whether YCbCr frames are captured in full range, as the stream signals.
     std::unique_ptr<display_device::DisplayPowerGuardInterface> display_power_guard;  ///< Display power guard.
 
     ~av_display_t() override {
@@ -171,7 +168,7 @@ namespace platf {
       } else if (pix_fmt == pix_fmt_e::nv12 || pix_fmt == pix_fmt_e::p010) {
         auto device = std::make_unique<nv12_zero_device>();
 
-        device->init(av_capture, pix_fmt, setResolution, setPixelFormat);
+        device->init(av_capture, pix_fmt, capture_full_range, setResolution, setPixelFormat);
 
         return device;
       } else {
@@ -255,9 +252,10 @@ namespace platf {
 
       CVPixelBufferLockBaseAddress(pixel_buffer, 0);
       if (CVPixelBufferIsPlanar(pixel_buffer)) {
-        // Video-range black for YUV formats: Y = 16, UV = 128
+        // Black for YUV formats: Y = 16 (video range) or 0 (full range), UV = 128
+        const int black_luma = capture_color::is_full_range(format) ? 0 : 16;
         for (size_t plane = 0; plane < CVPixelBufferGetPlaneCount(pixel_buffer); ++plane) {
-          std::memset(CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, plane), plane == 0 ? 16 : 128, CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, plane) * CVPixelBufferGetHeightOfPlane(pixel_buffer, plane));
+          std::memset(CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, plane), plane == 0 ? black_luma : 128, CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, plane) * CVPixelBufferGetHeightOfPlane(pixel_buffer, plane));
         }
       } else {
         std::memset(CVPixelBufferGetBaseAddress(pixel_buffer), 0, CVPixelBufferGetBytesPerRow(pixel_buffer) * CVPixelBufferGetHeight(pixel_buffer));
@@ -400,10 +398,15 @@ namespace platf {
     display->width = display->av_capture.frameWidth;
     display->height = display->av_capture.frameHeight;
 
+    // Capture in the colorspace and range the encoder signals to the client, in sRGB for SDR.
+    const auto colorspace {video::colorspace_from_client_config(config, false)};
+    display->capture_full_range = colorspace.full_range;
+    display->av_capture.colorMatrix = capture_color::ycbcr_matrix(colorspace.colorspace);
+    display->av_capture.colorSpaceName = capture_color::rgb_color_space(colorspace.colorspace);
+
     if (hwdevice_type == platf::mem_type_e::videotoolbox) {
-      const auto pixel_format {videotoolbox_pixel_format(config)};
       [display->av_capture setFrameWidth:config.width frameHeight:config.height];
-      display->av_capture.pixelFormat = pixel_format;
+      display->av_capture.pixelFormat = capture_color::pixel_format(colorspace.bit_depth == 10, colorspace.full_range);
     }
 
     return display;
