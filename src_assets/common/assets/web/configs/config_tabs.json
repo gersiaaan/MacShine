@@ -47,6 +47,7 @@
       "output_name": "",
       "macos_virtual_display": "enabled",
       "macos_virtual_display_hidpi": "enabled",
+      "macos_virtual_display_scale": 100,
       "macos_virtual_display_primary": "enabled",
       "macos_virtual_display_disable_host": "disabled",
       "macos_stop_stream_hotkey": "enabled",

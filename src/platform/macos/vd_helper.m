@@ -12,6 +12,10 @@
  *   - stdin reaches EOF (Sunshine closed the pipe or died), or
  *   - it receives SIGTERM/SIGINT.
  *
+ * The display offers several desktop sizes (`--sizes`), so the size can be changed in System
+ * Settings > Displays during a stream. A size picked there is remembered per serial and used again
+ * the next time that client connects.
+ *
  * Displays the helper turned off are turned back on before it exits. They are also recorded in a
  * state file, so `sunshine_vd_helper --restore` can turn them back on after a crash.
  *
@@ -22,9 +26,8 @@
  * Compiled with ARC.
  */
 #import <CoreGraphics/CoreGraphics.h>
-#import <Foundation/Foundation.h>
-
 #include <dlfcn.h>
+#import <Foundation/Foundation.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,6 +77,26 @@ typedef int (*get_brightness_fn)(CGDirectDisplayID display, float *brightness);
 typedef int (*set_brightness_fn)(CGDirectDisplayID display, float brightness);
 
 #pragma mark - State
+
+/** One desktop size the display offers, in pixels. */
+typedef struct {
+  unsigned long percent;
+  unsigned long width;
+  unsigned long height;
+} size_option_t;
+
+static const int MAX_SIZE_OPTIONS = 16;
+static size_option_t g_sizes[MAX_SIZE_OPTIONS];
+static int g_size_count;
+static unsigned long g_default_percent;
+static unsigned long g_current_percent;
+static unsigned long g_serial;
+// The size Sunshine last reported. This process owns the display, and CoreGraphics here keeps
+// returning the mode the helper selected itself, so a size picked in System Settings is only seen
+// through these reports.
+static size_t g_reported_pixel_wide;
+static size_t g_reported_pixel_high;
+static size_t g_reported_points_wide;
 
 static CGVirtualDisplay *g_display;
 static CGVirtualDisplaySettings *g_settings;
@@ -169,6 +192,125 @@ static void ensure_not_mirrored(void) {
   log_line(@"display %u was in a mirror set, detached (result %d)", display_id, err);
 }
 
+/** @return The offered size with these pixels, or NULL when the display does not offer it. */
+static const size_option_t *offered_size(size_t pixel_wide, size_t pixel_high) {
+  for (int i = 0; i < g_size_count; ++i) {
+    if (g_sizes[i].width == pixel_wide && g_sizes[i].height == pixel_high) {
+      return &g_sizes[i];
+    }
+  }
+  return NULL;
+}
+
+/** Parse `percent:WxH,...` into g_sizes, skipping entries the display cannot use. */
+static void parse_sizes(const char *value) {
+  NSArray<NSString *> *entries = [[NSString stringWithUTF8String:value] componentsSeparatedByString:@","];
+  for (NSString *entry in entries) {
+    size_option_t option = {0, 0, 0};
+    if (sscanf(entry.UTF8String, "%lu:%lux%lu", &option.percent, &option.width, &option.height) != 3) {
+      continue;
+    }
+    if (option.width < 320 || option.height < 200 || option.width > 8192 || option.height > 8192) {
+      continue;
+    }
+    if (g_size_count < MAX_SIZE_OPTIONS && !offered_size(option.width, option.height)) {
+      g_sizes[g_size_count++] = option;
+    }
+  }
+}
+
+static NSString *size_choices_path(void) {
+  NSString *base = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
+  return [[base stringByAppendingPathComponent:@"MacShine"] stringByAppendingPathComponent:@"display-sizes"];
+}
+
+/** @return Lines `<serial> <percent>` of the size choices file, without the given serial. */
+static NSMutableArray<NSString *> *size_choices_without(unsigned long serial, unsigned long *found_percent) {
+  NSMutableArray<NSString *> *kept = [NSMutableArray array];
+  NSString *contents = [NSString stringWithContentsOfFile:size_choices_path() encoding:NSUTF8StringEncoding error:nil];
+  for (NSString *line in [contents componentsSeparatedByString:@"\n"]) {
+    unsigned long line_serial = 0;
+    unsigned long percent = 0;
+    if (sscanf(line.UTF8String, "%lu %lu", &line_serial, &percent) != 2) {
+      continue;
+    }
+    if (line_serial == serial) {
+      if (found_percent) {
+        *found_percent = percent;
+      }
+      continue;
+    }
+    [kept addObject:line];
+  }
+  return kept;
+}
+
+/** @return The size this client picked last time, or 0 when it uses the configured size. */
+static unsigned long load_size_choice(void) {
+  unsigned long percent = 0;
+  size_choices_without(g_serial, &percent);
+  return percent;
+}
+
+/** Remember the size picked in System Settings for this client; the configured size needs no entry. */
+static void save_size_choice(void) {
+  NSMutableArray<NSString *> *lines = size_choices_without(g_serial, NULL);
+  if (g_current_percent != g_default_percent) {
+    [lines addObject:[NSString stringWithFormat:@"%lu %lu", g_serial, g_current_percent]];
+  }
+  NSString *path = size_choices_path();
+  if (lines.count == 0) {
+    [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+    return;
+  }
+  [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+  NSString *contents = [[lines componentsJoinedByString:@"\n"] stringByAppendingString:@"\n"];
+  [contents writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
+/**
+ * Follow a size picked in System Settings after the display is ready.
+ * @return YES when the current mode is one of the offered sizes.
+ */
+static BOOL follow_user_size(void) {
+  size_t pixel_wide = g_reported_pixel_wide;
+  size_t pixel_high = g_reported_pixel_high;
+  size_t points_wide = g_reported_points_wide;
+  if (pixel_wide == 0) {
+    CGDisplayModeRef current = CGDisplayCopyDisplayMode(g_display.displayID);
+    if (!current) {
+      return NO;
+    }
+    pixel_wide = CGDisplayModeGetPixelWidth(current);
+    pixel_high = CGDisplayModeGetPixelHeight(current);
+    points_wide = CGDisplayModeGetWidth(current);
+    CGDisplayModeRelease(current);
+  }
+
+  if (points_wide * g_scale != pixel_wide) {
+    return NO;
+  }
+  const size_option_t *option = offered_size(pixel_wide, pixel_high);
+  if (!option) {
+    // macOS adds sizes of its own to the list. Keep the one picked, but only offered sizes are remembered.
+    if (g_current_percent != 0 || g_points_wide != points_wide) {
+      g_current_percent = 0;
+      g_points_wide = points_wide;
+      g_points_high = pixel_high / g_scale;
+      log_line(@"size changed to %zux%zu pixels, not one of the offered sizes", pixel_wide, pixel_high);
+    }
+    return YES;
+  }
+  if (option->percent != g_current_percent || g_points_wide * g_scale != option->width) {
+    g_current_percent = option->percent;
+    g_points_wide = option->width / g_scale;
+    g_points_high = option->height / g_scale;
+    save_size_choice();
+    log_line(@"size changed to %lu%% (%lux%lu pixels)", option->percent, option->width, option->height);
+  }
+  return YES;
+}
+
 /**
  * Select the mode whose backing pixels match the client exactly.
  * macOS defaults a new HiDPI-capable display to its 1x mode and may restore a stale saved mode,
@@ -177,6 +319,10 @@ static void ensure_not_mirrored(void) {
  */
 static BOOL select_target_mode(void) {
   const CGDirectDisplayID display_id = g_display.displayID;
+  // Once streaming, a size picked in System Settings wins over the configured one.
+  if (g_ready_sent && follow_user_size()) {
+    return YES;
+  }
   NSDictionary *options = @{(__bridge NSString *) kCGDisplayShowDuplicateLowResolutionModes: @YES};
   CFArrayRef modes = CGDisplayCopyAllDisplayModes(display_id, (__bridge CFDictionaryRef) options);
   if (!modes) {
@@ -186,10 +332,7 @@ static BOOL select_target_mode(void) {
   CGDisplayModeRef target = NULL;
   for (CFIndex i = 0; i < CFArrayGetCount(modes); ++i) {
     CGDisplayModeRef mode = (CGDisplayModeRef) CFArrayGetValueAtIndex(modes, i);
-    if (CGDisplayModeGetWidth(mode) == g_points_wide &&
-        CGDisplayModeGetHeight(mode) == g_points_high &&
-        CGDisplayModeGetPixelWidth(mode) == g_points_wide * g_scale &&
-        CGDisplayModeGetPixelHeight(mode) == g_points_high * g_scale) {
+    if (CGDisplayModeGetWidth(mode) == g_points_wide && CGDisplayModeGetHeight(mode) == g_points_high && CGDisplayModeGetPixelWidth(mode) == g_points_wide * g_scale && CGDisplayModeGetPixelHeight(mode) == g_points_high * g_scale) {
       target = mode;
       break;
     }
@@ -645,10 +788,26 @@ static void tick(void) {
 
 #pragma mark - Entry point
 
+/** @return One mode per offered size, in points, the current size first. */
+static NSArray<CGVirtualDisplayMode *> *display_modes(CGFloat refresh_rate) {
+  NSMutableArray<CGVirtualDisplayMode *> *modes = [NSMutableArray array];
+  [modes addObject:[[CGVirtualDisplayMode alloc] initWithWidth:g_points_wide height:g_points_high refreshRate:refresh_rate]];
+  for (int i = 0; i < g_size_count; ++i) {
+    if (g_sizes[i].width / g_scale == g_points_wide && g_sizes[i].height / g_scale == g_points_high) {
+      continue;
+    }
+    [modes addObject:[[CGVirtualDisplayMode alloc] initWithWidth:g_sizes[i].width / g_scale
+                                                          height:g_sizes[i].height / g_scale
+                                                     refreshRate:refresh_rate]];
+  }
+  return modes;
+}
+
 static void usage(void) {
   fprintf(stderr,
           "usage: sunshine_vd_helper --width W --height H [--fps F] [--hidpi 0|1]\n"
-          "                          [--primary 0|1] [--disable-others 0|1] [--serial N] [--name NAME]\n"
+          "                          [--primary 0|1] [--disable-others 0|1] [--scale PERCENT]\n"
+          "                          [--sizes PERCENT:WxH,...] [--serial N] [--name NAME]\n"
           "       sunshine_vd_helper --restore\n");
 }
 
@@ -665,6 +824,8 @@ int main(int argc, const char *argv[]) {
     unsigned long primary = 1;
     unsigned long disable_others = 0;
     unsigned long serial = 1;
+    unsigned long scale = 100;
+    const char *sizes = NULL;
     NSString *name = @"MacShine Virtual Display";
 
     for (int i = 1; i + 1 < argc; i += 2) {
@@ -682,6 +843,10 @@ int main(int argc, const char *argv[]) {
         primary = parse_ulong(value, 1);
       } else if (strcmp(key, "--disable-others") == 0) {
         disable_others = parse_ulong(value, 0);
+      } else if (strcmp(key, "--scale") == 0) {
+        scale = parse_ulong(value, 100);
+      } else if (strcmp(key, "--sizes") == 0) {
+        sizes = value;
       } else if (strcmp(key, "--serial") == 0) {
         serial = parse_ulong(value, 1);
       } else if (strcmp(key, "--name") == 0) {
@@ -697,18 +862,55 @@ int main(int argc, const char *argv[]) {
       fps = 60;
     }
 
+    // The configured size always comes first; it is the size used unless this client picked another.
+    g_serial = serial;
+    g_default_percent = scale;
+    g_sizes[g_size_count++] = (size_option_t) {scale, width, height};
+    if (sizes) {
+      parse_sizes(sizes);
+    }
+
     // HiDPI needs an even pixel size: the display is W/2 x H/2 points backed by W x H pixels.
     g_scale = (hidpi && width % 2 == 0 && height % 2 == 0) ? 2 : 1;
-    g_points_wide = width / g_scale;
-    g_points_high = height / g_scale;
+    if (g_scale == 2) {
+      int kept = 0;
+      for (int i = 0; i < g_size_count; ++i) {
+        if (g_sizes[i].width % 2 == 0 && g_sizes[i].height % 2 == 0) {
+          g_sizes[kept++] = g_sizes[i];
+        }
+      }
+      g_size_count = kept;
+    }
+
+    size_option_t target = g_sizes[0];
+    const unsigned long remembered = load_size_choice();
+    for (int i = 0; remembered != 0 && i < g_size_count; ++i) {
+      if (g_sizes[i].percent == remembered) {
+        target = g_sizes[i];
+        log_line(@"using the size this client picked before: %lu%%", remembered);
+      }
+    }
+    g_current_percent = target.percent;
+    g_points_wide = target.width / g_scale;
+    g_points_high = target.height / g_scale;
     g_make_primary = primary != 0;
     g_disable_others = disable_others != 0;
 
     // Physical size drives the reported PPI. CGVirtualDisplay rejects displays that are too dense
-    // for their declared size, so derive it from a plausible PPI for the chosen scale.
+    // for their declared size, so derive it from a plausible PPI for the largest offered size.
+    unsigned long largest_wide = 0;
+    unsigned long largest_high = 0;
+    unsigned long largest_side = 0;
+    for (int i = 0; i < g_size_count; ++i) {
+      largest_side = MAX(largest_side, MAX(g_sizes[i].width, g_sizes[i].height));
+      if (g_sizes[i].width > largest_wide) {
+        largest_wide = g_sizes[i].width;
+        largest_high = g_sizes[i].height;
+      }
+    }
     const double ppi = g_scale == 2 ? 220.0 : 110.0;
-    const CGSize size_mm = CGSizeMake(width / ppi * 25.4, height / ppi * 25.4);
-    const unsigned int max_pixels = (unsigned int) (((width > height ? width : height) + 1) & ~1UL);
+    const CGSize size_mm = CGSizeMake(largest_wide / ppi * 25.4, largest_high / ppi * 25.4);
+    const unsigned int max_pixels = (unsigned int) ((largest_side + 1) & ~1UL);
 
     CGVirtualDisplayDescriptor *descriptor = [[CGVirtualDisplayDescriptor alloc] init];
     [descriptor setDispatchQueue:dispatch_get_main_queue()];
@@ -734,22 +936,17 @@ int main(int argc, const char *argv[]) {
 
     g_settings = [[CGVirtualDisplaySettings alloc] init];
     g_settings.hiDPI = g_scale == 2 ? 1 : 0;
-    g_settings.modes = @[[[CGVirtualDisplayMode alloc] initWithWidth:g_points_wide
-                                                              height:g_points_high
-                                                         refreshRate:(CGFloat) fps]];
+    g_settings.modes = display_modes((CGFloat) fps);
     if (![g_display applySettings:g_settings]) {
       // Some macOS versions refuse refresh rates above 60 Hz for virtual displays.
       log_line(@"applySettings failed at %lu Hz, retrying at 60 Hz", fps);
-      g_settings.modes = @[[[CGVirtualDisplayMode alloc] initWithWidth:g_points_wide
-                                                                height:g_points_high
-                                                           refreshRate:60]];
+      g_settings.modes = display_modes(60);
       if (![g_display applySettings:g_settings]) {
         log_line(@"applySettings failed");
         return 1;
       }
     }
-    log_line(@"created display %u: %lux%lu points @%lux, %lu Hz, serial %lu",
-             g_display.displayID, (unsigned long) g_points_wide, (unsigned long) g_points_high, (unsigned long) g_scale, fps, serial);
+    log_line(@"created display %u: %lux%lu points @%lux, %lu Hz, serial %lu, %d sizes, using %lu%%", g_display.displayID, (unsigned long) g_points_wide, (unsigned long) g_points_high, (unsigned long) g_scale, fps, serial, g_size_count, g_current_percent);
 
     // Every exit path below goes through exit(), which runs this before the display goes away.
     atexit(restore_other_displays);
@@ -758,12 +955,38 @@ int main(int argc, const char *argv[]) {
     signal(SIGPIPE, SIG_IGN);
     dispatch_source_t stdin_source =
       dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, STDIN_FILENO, 0, dispatch_get_main_queue());
+    // Sunshine also writes `SIZE <pixel width> <pixel height> <points width> <points height>` lines.
+    NSMutableData *pending_input = [NSMutableData data];
     dispatch_source_set_event_handler(stdin_source, ^{
-      char buffer[64];
+      char buffer[256];
       const ssize_t n = read(STDIN_FILENO, buffer, sizeof(buffer));
       if (n <= 0) {
         log_line(@"stdin closed, removing display");
         exit(0);
+      }
+      [pending_input appendBytes:buffer length:(NSUInteger) n];
+      while (true) {
+        const NSRange newline = [pending_input rangeOfData:[NSData dataWithBytes:"\n" length:1] options:0 range:NSMakeRange(0, pending_input.length)];
+        if (newline.location == NSNotFound) {
+          if (pending_input.length > 1024) {
+            pending_input.length = 0;
+          }
+          break;
+        }
+        NSString *line = [[NSString alloc] initWithData:[pending_input subdataWithRange:NSMakeRange(0, newline.location)] encoding:NSUTF8StringEncoding];
+        [pending_input replaceBytesInRange:NSMakeRange(0, newline.location + 1) withBytes:NULL length:0];
+        size_t pixel_wide = 0;
+        size_t pixel_high = 0;
+        size_t points_wide = 0;
+        size_t points_high = 0;
+        if (line && sscanf(line.UTF8String, "SIZE %zu %zu %zu %zu", &pixel_wide, &pixel_high, &points_wide, &points_high) == 4 && pixel_wide > 0 && pixel_high > 0 && points_wide > 0) {
+          g_reported_pixel_wide = pixel_wide;
+          g_reported_pixel_high = pixel_high;
+          g_reported_points_wide = points_wide;
+          if (g_ready_sent) {
+            follow_user_size();
+          }
+        }
       }
     });
     dispatch_resume(stdin_source);

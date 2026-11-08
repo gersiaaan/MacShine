@@ -156,6 +156,7 @@ namespace config {
       bool make_primary;  ///< Make the virtual display the main display (menu bar and Dock) while streaming.
       bool disable_host;  ///< Turn the host's own displays off while streaming, so only the virtual display remains.
       bool stop_hotkey;  ///< End every stream when Cmd+Esc is pressed on the host.
+      int scale_percent;  ///< Desktop size relative to the client resolution, in percent (50-200).
     } macos_vd;  ///< macOS virtual display settings.
 
     /**

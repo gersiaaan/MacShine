@@ -808,6 +808,7 @@ namespace config {
       true,  // macos_vd.make_primary
       false,  // macos_vd.disable_host
       true,  // macos_vd.stop_hotkey
+      100,  // macos_vd.scale_percent
     },
 
     {
@@ -1743,6 +1744,7 @@ namespace config {
     bool_f(vars, "macos_virtual_display_primary", video.macos_vd.make_primary);
     bool_f(vars, "macos_virtual_display_disable_host", video.macos_vd.disable_host);
     bool_f(vars, "macos_stop_stream_hotkey", video.macos_vd.stop_hotkey);
+    int_between_f(vars, "macos_virtual_display_scale", video.macos_vd.scale_percent, {50, 200});
 
     generic_f(vars, "dd_configuration_option", video.dd.configuration_option, dd::config_option_from_view);
     generic_f(vars, "dd_resolution_option", video.dd.resolution_option, dd::resolution_option_from_view);

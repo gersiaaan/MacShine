@@ -8,6 +8,7 @@
  * sees EOF and the display disappears with it.
  */
 // standard includes
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -176,21 +177,85 @@ namespace platf::virtual_display {
     }
   }  // namespace
 
+  int display_refresh_rate(int client_fps) {
+    if (client_fps <= 0) {
+      return client_fps;
+    }
+    return std::max(client_fps, std::min(client_fps * 2, MAX_REFRESH_RATE));
+  }
+
+  std::pair<int, int> display_pixel_size(const request_t &request) {
+    // The helper accepts up to 8192 pixels per side.
+    constexpr int MAX_PIXELS {8192};
+    int scale {std::clamp(request.scale_percent, MIN_SCALE_PERCENT, MAX_SCALE_PERCENT)};
+    const int largest_side {std::max(request.width, request.height)};
+    if (largest_side > 0 && largest_side * scale / 100 > MAX_PIXELS) {
+      scale = MAX_PIXELS * 100 / largest_side;
+    }
+
+    const auto scaled = [&](int pixels) {
+      const int value {(pixels * scale + 50) / 100};
+      return request.hidpi ? value / 2 * 2 : value;
+    };
+    return {scaled(request.width), scaled(request.height)};
+  }
+
+  std::vector<size_option_t> size_options(const request_t &request) {
+    // The helper rejects displays below this size.
+    constexpr int MIN_WIDTH {320};
+    constexpr int MIN_HEIGHT {200};
+
+    std::vector<size_option_t> options;
+    const auto add = [&](int percent, bool required) {
+      auto sized {request};
+      sized.scale_percent = percent;
+      const auto [width, height] {display_pixel_size(sized)};
+      if (!required && (width < MIN_WIDTH || height < MIN_HEIGHT)) {
+        return;
+      }
+      const bool duplicate {std::ranges::any_of(options, [&](const size_option_t &option) {
+        return option.width == width && option.height == height;
+      })};
+      if (!duplicate) {
+        options.push_back({percent, width, height});
+      }
+    };
+
+    add(std::clamp(request.scale_percent, MIN_SCALE_PERCENT, MAX_SCALE_PERCENT), true);
+    for (const int percent : SIZE_PRESETS) {
+      add(percent, false);
+    }
+    std::ranges::sort(options, {}, &size_option_t::percent);
+    return options;
+  }
+
   std::vector<std::string> helper_arguments(const std::string &helper, const request_t &request) {
+    const auto [width, height] {display_pixel_size(request)};
+    std::string sizes;
+    for (const auto &option : size_options(request)) {
+      if (!sizes.empty()) {
+        sizes += ',';
+      }
+      sizes += std::to_string(option.percent) + ':' + std::to_string(option.width) + 'x' + std::to_string(option.height);
+    }
     return {
       helper,
       "--width",
-      std::to_string(request.width),
+      std::to_string(width),
       "--height",
-      std::to_string(request.height),
+      std::to_string(height),
       "--fps",
-      std::to_string(request.fps),
+      std::to_string(display_refresh_rate(request.fps)),
       "--hidpi",
       request.hidpi ? "1" : "0",
       "--primary",
       request.make_primary ? "1" : "0",
       "--disable-others",
       request.disable_others ? "1" : "0",
+      "--scale",
+      std::to_string(std::clamp(request.scale_percent, MIN_SCALE_PERCENT, MAX_SCALE_PERCENT)),
+      "--sizes",
+      sizes,
       "--serial",
       std::to_string(request.serial),
       "--name",
@@ -244,7 +309,7 @@ namespace platf::virtual_display {
         std::lock_guard ready_lock {g_helper->ready_mutex};
         alive = !g_helper->exited;
       }
-      if (alive && current.width == request.width && current.height == request.height && current.fps == request.fps && current.hidpi == request.hidpi && current.make_primary == request.make_primary && current.disable_others == request.disable_others && current.serial == request.serial) {
+      if (alive && current.width == request.width && current.height == request.height && current.fps == request.fps && current.hidpi == request.hidpi && current.make_primary == request.make_primary && current.disable_others == request.disable_others && current.scale_percent == request.scale_percent && current.serial == request.serial) {
         BOOST_LOG(info) << "Reusing virtual display "sv << g_helper->display_id;
         return g_helper->display_id;
       }
@@ -302,6 +367,9 @@ namespace platf::virtual_display {
       return std::nullopt;
     }
     fcntl(in_pipe[1], F_SETFD, FD_CLOEXEC);
+    // Size reports must never block Sunshine or kill it with SIGPIPE when the helper is gone.
+    fcntl(in_pipe[1], F_SETFL, fcntl(in_pipe[1], F_GETFL) | O_NONBLOCK);
+    fcntl(in_pipe[1], F_SETNOSIGPIPE, 1);
     fcntl(out_pipe[0], F_SETFD, FD_CLOEXEC);
 
     g_helper = std::make_unique<helper_state_t>();
@@ -311,7 +379,8 @@ namespace platf::virtual_display {
     g_helper->reader = std::thread {read_helper_output, g_helper.get(), out_pipe[0]};
 
     BOOST_LOG(info) << "Creating virtual display "sv << request.width << 'x' << request.height << '@' << request.fps
-                    << (request.hidpi ? " (HiDPI)"sv : ""sv) << " for ["sv << request.name << ']';
+                    << " (display "sv << display_refresh_rate(request.fps) << " Hz)"sv
+                    << (request.hidpi ? " (HiDPI)"sv : ""sv) << " at "sv << request.scale_percent << "% for ["sv << request.name << ']';
 
     std::string display_id;
     {
@@ -346,5 +415,22 @@ namespace platf::virtual_display {
     }
     std::lock_guard ready_lock {g_helper->ready_mutex};
     return g_helper->exited ? std::string {} : g_helper->display_id;
+  }
+
+  std::string size_message(int pixel_width, int pixel_height, int points_width, int points_height) {
+    return "SIZE "s + std::to_string(pixel_width) + ' ' + std::to_string(pixel_height) + ' ' + std::to_string(points_width) + ' ' + std::to_string(points_height) + '\n';
+  }
+
+  void report_size(const std::string &display_id, int pixel_width, int pixel_height, int points_width, int points_height) {
+    if (display_id.empty() || pixel_width <= 0 || pixel_height <= 0 || points_width <= 0 || points_height <= 0) {
+      return;
+    }
+    std::lock_guard lock {g_mutex};
+    if (!g_helper || g_helper->stdin_fd < 0 || g_helper->display_id != display_id) {
+      return;
+    }
+    const auto message {size_message(pixel_width, pixel_height, points_width, points_height)};
+    // A full pipe or a helper that just exited only loses this report; the next one is sent on the next change.
+    [[maybe_unused]] const auto written {write(g_helper->stdin_fd, message.data(), message.size())};
   }
 }  // namespace platf::virtual_display

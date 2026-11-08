@@ -24,6 +24,7 @@
 #include "src/platform/macos/misc.h"
 #include "src/platform/macos/nv12_zero_device.h"
 #include "src/platform/macos/sc_video.h"
+#include "src/platform/macos/virtual_display.h"
 
 // Avoid conflict between AVFoundation and libavutil both defining AVMediaType
 /**
@@ -93,7 +94,21 @@ namespace platf {
     }
 
     capture_e capture(const push_captured_image_cb_t &push_captured_image_cb, const pull_free_image_cb_t &pull_free_image_cb, bool *cursor) override {
+      auto resized = std::make_shared<std::atomic<bool>>(false);
+      auto next_size_check = std::make_shared<std::chrono::steady_clock::time_point>(std::chrono::steady_clock::now());
+
       auto signal = [av_capture capture:^(CMSampleBufferRef sampleBuffer) {
+        // MacShine: the desktop size can be changed in System Settings during a stream. Reinitialize
+        // then, so the capture size and the mouse and touch mapping follow the new size.
+        if (const auto now {std::chrono::steady_clock::now()}; now >= *next_size_check) {
+          *next_size_check = now + std::chrono::milliseconds(250);
+          if (display_size_changed()) {
+            BOOST_LOG(info) << "Display "sv << display_id << " changed size, reinitializing capture"sv;
+            resized->store(true);
+            return false;
+          }
+        }
+
         auto new_sample_buffer = std::make_shared<av_sample_buf_t>(sampleBuffer);
         auto new_pixel_buffer = std::make_shared<av_pixel_buf_t>(new_sample_buffer->buf);
 
@@ -142,7 +157,20 @@ namespace platf {
       dispatch_semaphore_wait(signal, DISPATCH_TIME_FOREVER);
 
       BOOST_LOG(debug) << "Display "sv << display_id << " capture ended"sv;
-      return capture_e::ok;
+      return resized->load() ? capture_e::reinit : capture_e::ok;
+    }
+
+    /**
+     * @brief Check whether the captured display no longer has the size it had when capture started.
+     *
+     * @return True when the display's size in points changed.
+     */
+    bool display_size_changed() const {
+      const auto bounds {CGDisplayBounds(display_id)};
+      if (CGRectIsEmpty(bounds)) {
+        return false;
+      }
+      return static_cast<int>(bounds.size.width) != logical_width || static_cast<int>(bounds.size.height) != logical_height;
     }
 
     /**
@@ -371,6 +399,18 @@ namespace platf {
     display->env_logical_height = static_cast<int>(desktop_bounds.size.height);
     display->env_width = display->env_logical_width;
     display->env_height = display->env_logical_height;
+
+    // MacShine: the virtual display's helper cannot see sizes picked in System Settings; report the current one.
+    if (CGDisplayModeRef mode = CGDisplayCopyDisplayMode(display->display_id)) {
+      platf::virtual_display::report_size(
+        std::to_string(display->display_id),
+        static_cast<int>(CGDisplayModeGetPixelWidth(mode)),
+        static_cast<int>(CGDisplayModeGetPixelHeight(mode)),
+        static_cast<int>(CGDisplayModeGetWidth(mode)),
+        static_cast<int>(CGDisplayModeGetHeight(mode))
+      );
+      CGDisplayModeRelease(mode);
+    }
 
     BOOST_LOG(debug) << "Selected display bounds: "sv << display->offset_x << 'x' << display->offset_y << ' '
                      << display->logical_width << 'x' << display->logical_height;

@@ -980,6 +980,7 @@ namespace display_device {
         .hidpi = video_config.macos_vd.hidpi,
         .make_primary = video_config.macos_vd.make_primary,
         .disable_others = video_config.macos_vd.disable_host,
+        .scale_percent = video_config.macos_vd.scale_percent,
         .serial = platf::virtual_display::serial_for_client(client_key),
         .name = name,
       };

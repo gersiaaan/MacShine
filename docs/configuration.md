@@ -1191,6 +1191,38 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
     </tr>
 </table>
 
+### macos_virtual_display_scale
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            How large the Mac desktop looks on the client, in percent of the client resolution. Values above 100 give
+            more space with smaller text, values below 100 give larger text. The stream resolution stays the client's
+            resolution: the virtual display is rendered at the scaled size and the capture scales it back.
+            This is the size for clients that have not picked one. During a stream the size can also be changed per
+            client in System Settings &gt; Displays (75% to 200%); that choice is remembered for the client.
+            @note{This option only applies to macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            100
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Range</td>
+        <td colspan="2">50-200</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            macos_virtual_display_scale = 150
+            @endcode</td>
+    </tr>
+</table>
+
 ### macos_virtual_display_primary
 
 <table>
