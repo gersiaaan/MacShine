@@ -66,10 +66,9 @@ What you see on the iPad is the Mac's real desktop, pixel for pixel.
 - **Microphone passthrough.** The device's mic shows up on the Mac as an input called "MacShine", with echo cancellation, voice isolation and EQ. Siri, Zoom and every other app just hear it.
 - **Touch and gestures** from tablets.
 
+<!-- Screenshots section: add iPad at 100 % and "More Space" here, then show it again.
 ## Screenshots
-
-<!-- Screenshots coming soon: iPad at 100 % and "More Space", settings page. -->
-_Coming soon._
+-->
 
 ## Install
 
