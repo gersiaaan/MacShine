@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0d12"/>
+      <stop offset="1" stop-color="#151a24"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff9f43"/>
+      <stop offset="0.5" stop-color="#ee5a8f"/>
+      <stop offset="1" stop-color="#5f6cff"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffd166" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#ffd166" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#ffd166" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="520" rx="24" fill="url(#bg)"/>
+
+  <!-- Mac (host) with dark display -->
+  <g transform="translate(90,150)">
+    <rect x="0" y="0" width="340" height="215" rx="14" fill="#1d212b" stroke="#2c3240" stroke-width="2"/>
+    <rect x="12" y="12" width="316" height="191" rx="6" fill="#000"/>
+    <text x="170" y="112" text-anchor="middle" fill="#3a4050" font-size="15" letter-spacing="2">DISPLAY OFF</text>
+    <path d="M-30 215 H370 L350 232 H-10 Z" fill="#2a2f3b"/>
+    <text x="170" y="275" text-anchor="middle" fill="#9aa3b5" font-size="18">Your Mac</text>
+    <text x="170" y="298" text-anchor="middle" fill="#5d6577" font-size="14">does the work, screen stays dark</text>
+  </g>
+
+  <!-- beam -->
+  <rect x="470" y="252" width="230" height="4" rx="2" fill="url(#beam)"/>
+  <text x="585" y="232" text-anchor="middle" fill="#ffd166" font-size="15" font-weight="600" letter-spacing="1">VIRTUAL DISPLAY</text>
+  <text x="585" y="286" text-anchor="middle" fill="#7f889a" font-size="13">native resolution · Retina · low latency</text>
+
+  <!-- iPad (client) -->
+  <g transform="translate(740,95)">
+    <rect x="0" y="0" width="380" height="285" rx="22" fill="#1d212b" stroke="#3a4050" stroke-width="2"/>
+    <rect x="14" y="14" width="352" height="257" rx="10" fill="url(#screen)"/>
+    <rect x="14" y="14" width="352" height="16" rx="0" fill="#000" fill-opacity="0.35"/>
+    <rect x="120" y="243" width="140" height="20" rx="6" fill="#fff" fill-opacity="0.25"/>
+    <rect x="44" y="60" width="170" height="110" rx="8" fill="#fff" fill-opacity="0.9"/>
+    <rect x="44" y="60" width="170" height="16" rx="8" fill="#e8e8ee"/>
+    <rect x="58" y="92" width="120" height="6" rx="3" fill="#c7c9d3"/>
+    <rect x="58" y="106" width="140" height="6" rx="3" fill="#c7c9d3"/>
+    <rect x="58" y="120" width="96" height="6" rx="3" fill="#c7c9d3"/>
+    <rect x="232" y="100" width="110" height="120" rx="8" fill="#fff" fill-opacity="0.75"/>
+    <text x="190" y="330" text-anchor="middle" fill="#9aa3b5" font-size="18">iPad · Mac · Windows · Android</text>
+    <text x="190" y="353" text-anchor="middle" fill="#5d6577" font-size="14">a real second screen, 1:1 pixel perfect</text>
+  </g>
+
+  <text x="600" y="470" text-anchor="middle" fill="#ffffff" font-size="30" font-weight="700">MacShine</text>
+  <text x="600" y="498" text-anchor="middle" fill="#7f889a" font-size="15">Your Mac, on any screen. Natively.</text>
+</svg>

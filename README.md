@@ -1,549 +1,117 @@
 <div align="center">
-  <img
-    src="sunshine.svg"
-    alt="Sunshine icon"
-    width="256"
-/>
-  <h1 align="center">Sunshine</h1>
-  <h4 align="center">Self-hosted game stream host for Moonlight.</h4>
+  <img src="docs/macshine/hero.svg" alt="MacShine: your Mac on any screen" width="100%"/>
+
+  <h1>MacShine</h1>
+  <h3>Your Mac, on any screen. Natively.</h3>
+
+  <p>
+    MacShine turns your iPad, MacBook or Windows laptop into a real display for your Mac.<br/>
+    Not a mirrored screen squeezed into the wrong shape, but a <b>virtual display made for the device you are holding</b>:
+    its exact resolution, Retina sharp, color accurate and fast.
+  </p>
+
+  <a href="https://github.com/gersiaaan/MacShine/releases/latest"><img src="https://img.shields.io/github/v/release/gersiaaan/MacShine?style=for-the-badge&label=download&color=ffb000" alt="Download"/></a>
+  <img src="https://img.shields.io/badge/macOS-host-black?style=for-the-badge&logo=apple" alt="macOS host"/>
+  <img src="https://img.shields.io/badge/Apple%20Silicon-native-black?style=for-the-badge" alt="Apple Silicon"/>
+  <img src="https://img.shields.io/badge/license-GPL--3.0-555?style=for-the-badge" alt="GPL-3.0"/>
 </div>
 
-<div align="center">
-  <!-- Keep whitespace outside the badge links to avoid an underlined gap. -->
-  <!-- Use raw HTML aliases to keep Doxygen's emitted comment delimiters balanced. -->
-  <!--! @htmlonly_start -->
-  <a href="https://www.star-history.com/lizardbyte/sunshine"><picture><source
-    media="(prefers-color-scheme: dark)"
-    srcset="https://api.star-history.com/badge?repo=LizardByte/Sunshine&type=rank&theme=dark"
-  /><source
-    media="(prefers-color-scheme: light)"
-    srcset="https://api.star-history.com/badge?repo=LizardByte/Sunshine&type=rank"
-  /><img
-    alt="Star History Rank"
-    src="https://api.star-history.com/badge?repo=LizardByte/Sunshine&type=rank"
-  /></picture></a>
-  <a href="https://www.star-history.com/lizardbyte/sunshine"><picture><source
-    media="(prefers-color-scheme: dark)"
-    srcset="https://api.star-history.com/badge?repo=LizardByte/Sunshine&type=trending&theme=dark"
-  /><source
-    media="(prefers-color-scheme: light)"
-    srcset="https://api.star-history.com/badge?repo=LizardByte/Sunshine&type=trending"
-  /><img
-    alt="GitHub Trending Repository of the Day"
-    src="https://api.star-history.com/badge?repo=LizardByte/Sunshine&type=trending"
-  /></picture></a><br><br>
-  <!--! @htmlonly_end -->
-  <a href="https://github.com/LizardByte/Sunshine"><img src="https://img.shields.io/github/stars/lizardbyte/sunshine.svg?logo=github&style=for-the-badge" alt="GitHub stars"></a>
-  <a href="https://github.com/LizardByte/Sunshine/releases/latest"><img src="https://img.shields.io/github/downloads/lizardbyte/sunshine/total.svg?style=for-the-badge&logo=github" alt="GitHub Releases"></a>
-  <a href="https://hub.docker.com/r/lizardbyte/sunshine"><img src="https://img.shields.io/docker/pulls/lizardbyte/sunshine.svg?style=for-the-badge&logo=docker" alt="Docker"></a>
-  <a href="https://github.com/LizardByte/Sunshine/pkgs/container/sunshine"><img src="https://img.shields.io/badge/dynamic/json.svg?url=https%3A%2F%2Fipitio.github.io%2Fbackage%2FLizardByte%2FSunshine%2Fsunshine.json&query=%24.downloads&label=ghcr%20pulls&style=for-the-badge&logo=github" alt="GHCR"></a>
-  <a href="https://flathub.org/apps/dev.lizardbyte.app.Sunshine"><img src="https://img.shields.io/flathub/downloads/dev.lizardbyte.app.Sunshine.svg?style=for-the-badge&logo=flathub" alt="Flathub installs"></a>
-  <a href="https://flathub.org/apps/dev.lizardbyte.app.Sunshine"><img src="https://img.shields.io/flathub/v/dev.lizardbyte.app.Sunshine.svg?style=for-the-badge&logo=flathub" alt="Flathub Version"></a>
-  <a href="https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/LizardByte/Sunshine"><img src="https://img.shields.io/winget/v/LizardByte.Sunshine.svg?style=for-the-badge&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHuSURBVFhH7ZfNTtRQGIYZiMDwN/IrCAqIhMSNKxcmymVwG+5dcDVsWHgDrtxwCYQVl+BChzDEwSnPY+eQ0sxoOz1mQuBNnpyvTdvz9jun5/SrjfxnJUkyQbMEz2ELduF1l0YUA3QyTrMAa2AnPtyOXsELeAYNyKtV2EC3k3lYgTOwg09ghy/BTp7CKBRV844BOpmmMV2+ySb4BmInG7AKY7AHH+EYqqhZo9PPBG/BVDlOizAD/XQFmnoPXzxRQX8M/CCYS48L6RIc4ygGHK9WGg9HZSZMUNRPVwNJGg5Hg2Qgqh4N3FsDsb6EmgYm07iwwvUxstdxJTwgmILf4CfZ6bb5OHANX8GN5x20IVxnG8ge94pt2xpwU3GnCwayF4Q2G2vgFLzHndFzQdk4q77nNfCdwL28qNyMtmEf3A1/QV5FjDiPWo5jrwf8TWZChTlgJvL4F9QL50/A43qVidTvLcuoM2wDQ1+IkgefgUpLcYwMVBqCKNJA2b0gKNocOIITOIef8C/F/CdMbh/GklynsSawKLHS8d9/B1x2LUqsfFyy3TMsWj5A1cLkotDbYO4JjWWZlZEGv8EbOIR1CAVN2eG8W5oNKgxaeC6DmTJjZs7ixUxpznLPLT+v4sXpoMLcLI3mzFSonDXIEI/M3QCIO4YuimBJ/gAAAABJRU5ErkJggg==" alt="Winget Version"></a>
-  <a href="https://github.com/LizardByte/Sunshine/actions/workflows/ci.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/lizardbyte/sunshine/ci.yml.svg?branch=master&label=CI%20build&logo=github&style=for-the-badge" alt="GitHub Workflow Status (CI)"></a>
-  <a href="https://github.com/LizardByte/Sunshine/actions/workflows/localize.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/lizardbyte/sunshine/localize.yml.svg?branch=master&label=localize%20build&logo=github&style=for-the-badge" alt="GitHub Workflow Status (localize)"></a>
-  <a href="https://codecov.io/gh/LizardByte/Sunshine"><img src="https://img.shields.io/endpoint.svg?url=https%3A%2F%2Fapp.lizardbyte.dev%2Fdashboard%2Fshields%2Fcodecov%2FSunshine.json&style=for-the-badge&logo=codecov" alt="Codecov"></a>
-  <a href="https://sonarcloud.io/project/overview?id=LizardByte_Sunshine"><img src="https://img.shields.io/sonar/quality_gate/LizardByte_Sunshine.svg?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge&logo=sonarqubecloud&label=sonarcloud" alt="SonarCloud"></a>
-</div>
+---
 
-## ℹ️ About
+## Why MacShine
 
-Sunshine is a self-hosted game stream host for Moonlight.
-Offering low-latency, cloud gaming server capabilities with support for AMD, Intel, and Nvidia GPUs for hardware
-encoding. Software encoding is also available. You can connect to Sunshine from any Moonlight client on a variety of
-devices. A web UI is provided to allow configuration, and client pairing, from your favorite web browser. Pair from
-the local server or any mobile device.
+Classic screen streaming captures the Mac's own monitor and squeezes it onto your tablet.
+Wrong aspect ratio, black bars, blurry text, tiny UI.
 
-LizardByte has the full documentation hosted on [Read the Docs](https://docs.lizardbyte.dev/projects/sunshine)
+**MacShine works the other way round.** When a device connects, your Mac creates a brand-new
+display that exists only for that device, in exactly its resolution. macOS renders straight into it.
+What you see on the iPad is the Mac's real desktop, pixel for pixel.
 
-* [Stable Docs](https://docs.lizardbyte.dev/projects/sunshine/latest/)
-* [Beta Docs](https://docs.lizardbyte.dev/projects/sunshine/master/)
+## Features
 
-## 🎮 Feature Compatibility
+### 🖥 A display made for your device
+- **Native resolution, 1:1.** Every device gets its own virtual display in its exact resolution. No scaling, no black bars.
+- **Retina / HiDPI.** Text and UI are rendered at 2× and stay razor sharp, just like on a built-in Apple display.
+- **Resize without blur.** Switch between "Larger Text" and "More Space" (75 – 200 %) in System Settings → Displays, live while streaming. The stream resolution stays the same, so it never gets soft. Your choice is remembered per device.
+- **Full desktop.** Menu bar and Dock move onto the streamed display, so it feels like sitting in front of the Mac.
+- **Remembers each device.** Every paired device gets a fixed display identity. macOS keeps its arrangement, size and window positions.
+- **Seamless reconnect.** Drop the connection or switch apps: the display stays alive for 30 seconds, so your windows are still where you left them.
 
-<table>
-    <caption id="gamepad_emulation">Gamepad Emulation</caption>
-    <tr>
-        <th>Feature</th>
-        <th>FreeBSD</th>
-        <th>Linux</th>
-        <th>macOS</th>
-        <th>Windows</th>
-    </tr>
-    <tr>
-        <td colspan="5" align="center">
-        What type of gamepads can be emulated on the host.<br>
-        Clients may support other gamepads.
-        </td>
-    </tr>
-    <tr>
-        <td>Generic</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>DualShock / DS4 (PlayStation 4)</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>DualSense / DS5 (PlayStation 5)</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>Nintendo Switch Pro</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>Xbox 360</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>Xbox One</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>Xbox Series</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-</table>
+### ⚡ Low latency
+- **ScreenCaptureKit capture** straight from the GPU, shared between streams.
+- **Double refresh rate.** The virtual display renders at twice the stream rate (up to 120 Hz), so your input lands in the very next frame.
+- **No frame held back.** Each frame is sent the moment it is ready, and host latency is reported to the client.
+- **Smooth touchpad scrolling** with natural macOS-style gliding.
 
-> [!NOTE]
-> <sup>1</sup> Missing motion, touchpad input, battery state, RGB LEDs, adaptive triggers, and raw HID output reports.
-> <sup>2</sup> Requires the separately installed and licensed Virtual HID Broker.
-> <sup>3</sup> All profiles are available through the separately installed and licensed Virtual HID Broker. Xbox 360 and DualShock 4 can also use ViGEmBus.
+### 🎨 Color accurate
+- The Mac captures in exactly the **color space and range the client asks for**, so colors arrive 1:1 instead of washed out or crushed.
 
-<table>
-    <caption id="encoding_api">Encoding API</caption>
-    <tr>
-        <th>Encoding API</th>
-        <th>GPU Vendor</th>
-        <th>FreeBSD</th>
-        <th>Linux</th>
-        <th>macOS</th>
-        <th>Windows</th>
-    </tr>
-    <tr>
-        <td>AMF</td>
-        <td>AMD</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>✅</td>
-    </tr>
-    <tr>
-        <td>Media Foundation</td>
-        <td>Qualcomm</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>✅</td>
-    </tr>
-    <tr>
-        <td>NVENC</td>
-        <td>NVIDIA</td>
-        <td>➖</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>✅</td>
-    </tr>
-    <tr>
-        <td>QuickSync</td>
-        <td>Intel</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>✅</td>
-    </tr>
-    <tr>
-        <td rowspan="3">VAAPI</td>
-        <td>AMD</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>Intel</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>NVIDIA</td>
-        <td>➖</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td rowspan="2">Video Toolbox</td>
-        <td>Apple</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>✅</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>Intel</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>✅</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td rowspan="3">Vulkan Video</td>
-        <td>AMD</td>
-        <td>🟡</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>Intel</td>
-        <td>🟡</td>
-        <td>🟡</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>NVIDIA</td>
-        <td>➖</td>
-        <td>🟡</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>Software</td>
-        <td>Any</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-    </tr>
-</table>
+### 🌑 Your Mac becomes a compute box
+- **Host displays off.** While streaming, the Mac's own screens go dark (even mini-LED goes fully black). Open the lid mid-stream and it stays dark.
+- **Local input locked.** The Mac's keyboard and trackpad are ignored while someone is connected.
+- **Cmd + Esc** ends everything instantly and gives you your Mac back.
 
-<table>
-    <caption id="screen_capture">Screen Capture</caption>
-    <tr>
-        <th>Capture Method</th>
-        <th>FreeBSD</th>
-        <th>Linux</th>
-        <th>macOS</th>
-        <th>Windows</th>
-    </tr>
-    <tr>
-        <td>DXGI Desktop Duplication</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>✅</td>
-    </tr>
-    <tr>
-        <td>KMS/DRM</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>NvFBC (X11 only)</td>
-        <td>➖</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>ScreenCaptureKit</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>✅</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>Wayland (wlroots)</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>Windows.Graphics.Capture</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>🟡</td>
-    </tr>
-    <tr>
-        <td>&nbsp;&nbsp;↳ Portable</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>✅</td>
-    </tr>
-    <tr>
-        <td>&nbsp;&nbsp;↳ Service</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>➖</td>
-        <td>❌</td>
-    </tr>
-    <tr>
-        <td>X11</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>XDG Desktop Portal</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-    <tr>
-        <td>KWin Screencast</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>➖</td>
-        <td>➖</td>
-    </tr>
-</table>
+### 🎙 Input from the device
+- **Microphone passthrough.** The device's mic shows up on the Mac as an input called "MacShine", with echo cancellation, voice isolation and EQ. Siri, Zoom and every other app just hear it.
+- **Touch and gestures** from tablets.
 
-<table>
-    <caption id="capture_encoding_compat">Capture → Encoding Compatibility (Linux/FreeBSD)</caption>
-    <tr>
-        <th>Capture Method</th>
-        <th>VAAPI</th>
-        <th>Vulkan Video</th>
-        <th>NVENC (CUDA)</th>
-        <th>Software</th>
-    </tr>
-    <tr>
-        <td>KMS/DRM</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-    </tr>
-    <tr>
-        <td>NvFBC</td>
-        <td>❌</td>
-        <td>❌</td>
-        <td>✅</td>
-        <td>❌</td>
-    </tr>
-    <tr>
-        <td>Wayland (wlroots)</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-    </tr>
-    <tr>
-        <td>X11</td>
-        <td>✅</td>
-        <td>❌</td>
-        <td>✅</td>
-        <td>✅</td>
-    </tr>
-    <tr>
-        <td>XDG Desktop Portal</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-    </tr>
-    <tr>
-        <td>KWin Screencast</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-    </tr>
-</table>
+## Screenshots
 
-**Legend:** ✅ Supported | 🟡 Partial Support | ❌ Not Yet Supported | ➖ Not Applicable
+<!-- Screenshots coming soon: iPad at 100 % and "More Space", settings page. -->
+_Coming soon._
 
-## 🖥️ System Requirements
+## Install
 
-> [!WARNING]
-> These tables are a work in progress. Do not purchase hardware based on this information.
+### 1. On your Mac (the host)
+1. Download **MacShine.dmg** from [Releases](https://github.com/gersiaaan/MacShine/releases/latest) and drag MacShine into Applications.
+2. First launch: right-click MacShine → **Open** (the app is not notarized by Apple yet). If macOS still refuses, run `xattr -dr com.apple.quarantine /Applications/MacShine.app`.
+3. Allow **Screen Recording** and **Accessibility** when macOS asks.
+4. Open the setup page at **https://localhost:47990** and create a user name and password.
 
-<table>
-    <caption id="minimum_requirements">Minimum Requirements</caption>
-    <tr>
-        <th>Component</th>
-        <th>Requirement</th>
-    </tr>
-    <tr>
-        <td rowspan="3">GPU</td>
-        <td>AMD: VCE 1.0 or higher, see: <a href="https://github.com/obsproject/obs-amd-encoder/wiki/Hardware-Support">obs-amd hardware support</a></td>
-    </tr>
-    <tr>
-        <td>
-            Intel:<br>
-            &nbsp;&nbsp;FreeBSD/Linux: VAAPI-compatible, see: <a href="https://www.intel.com/content/www/us/en/developer/articles/technical/linuxmedia-vaapi.html">VAAPI hardware support</a><br>
-            &nbsp;&nbsp;Windows: Skylake or newer with QuickSync encoding support
-        </td>
-    </tr>
-    <tr>
-        <td>Nvidia: NVENC enabled cards, see: <a href="https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new">nvenc support matrix</a></td>
-    </tr>
-    <tr>
-        <td rowspan="2">CPU</td>
-        <td>AMD: Ryzen 3 or higher</td>
-    </tr>
-    <tr>
-        <td>Intel: Core i3 or higher</td>
-    </tr>
-    <tr>
-        <td>RAM</td>
-        <td>4GB or more</td>
-    </tr>
-    <tr>
-        <td rowspan="6">OS</td>
-        <td>FreeBSD: 15.1+</td>
-    </tr>
-    <tr>
-        <td>Linux/Debian: 13+ (trixie)</td>
-    </tr>
-    <tr>
-        <td>Linux/Fedora: 43+</td>
-    </tr>
-    <tr>
-        <td>Linux/Ubuntu: 22.04+ (jammy)</td>
-    </tr>
-    <tr>
-        <td>macOS: 14.2+</td>
-    </tr>
-    <tr>
-        <td>Windows: 11+</td>
-    </tr>
-    <tr>
-        <td rowspan="2">Network</td>
-        <td>Host: 5GHz, 802.11ac</td>
-    </tr>
-    <tr>
-        <td>Client: 5GHz, 802.11ac</td>
-    </tr>
-</table>
+### 2. On your device (the client)
+Install **Moonlight**, the free open-source streaming client:
+[iPad / iPhone](https://apps.apple.com/app/moonlight-game-streaming/id1000551566) ·
+[Mac, Windows, Linux](https://moonlight-stream.org) ·
+[Android](https://play.google.com/store/apps/details?id=com.limelight)
 
-<table>
-    <caption id="4k_suggestions">4k Suggestions</caption>
-    <tr>
-        <th>Component</th>
-        <th>Requirement</th>
-    </tr>
-    <tr>
-        <td rowspan="3">GPU</td>
-        <td>AMD: Video Coding Engine 3.1 or higher</td>
-    </tr>
-    <tr>
-        <td>
-            Intel:<br>
-            &nbsp;&nbsp;FreeBSD/Linux: HD Graphics 510 or higher<br>
-            &nbsp;&nbsp;Windows: Skylake or newer with QuickSync encoding support
-        </td>
-    </tr>
-    <tr>
-        <td>
-            Nvidia:<br>
-            &nbsp;&nbsp;FreeBSD/Linux: GeForce RTX 2000 series or higher<br>
-            &nbsp;&nbsp;Windows: Geforce GTX 1080 or higher
-        </td>
-    </tr>
-    <tr>
-        <td rowspan="2">CPU</td>
-        <td>AMD: Ryzen 5 or higher</td>
-    </tr>
-    <tr>
-        <td>Intel: Core i5 or higher</td>
-    </tr>
-    <tr>
-        <td rowspan="2">Network</td>
-        <td>Host: CAT5e ethernet or better</td>
-    </tr>
-    <tr>
-        <td>Client: CAT5e ethernet or better</td>
-    </tr>
-</table>
+Open Moonlight, pick your Mac, enter the PIN on the setup page. Done.
+Set the resolution in Moonlight to your device's native resolution and MacShine does the rest.
 
-<table>
-    <caption id="hdr_suggestions">HDR Suggestions</caption>
-    <tr>
-        <th>Component</th>
-        <th>Requirement</th>
-    </tr>
-    <tr>
-        <td rowspan="3">GPU</td>
-        <td>AMD: Video Coding Engine 3.4 or higher</td>
-    </tr>
-    <tr>
-        <td>Intel: HD Graphics 730 or higher</td>
-    </tr>
-    <tr>
-        <td>Nvidia: Pascal-based GPU (GTX 10-series) or higher</td>
-    </tr>
-    <tr>
-        <td rowspan="2">CPU</td>
-        <td>AMD: Ryzen 5 or higher</td>
-    </tr>
-    <tr>
-        <td>Intel: Core i5 or higher</td>
-    </tr>
-    <tr>
-        <td rowspan="2">Network</td>
-        <td>Host: CAT5e ethernet or better</td>
-    </tr>
-    <tr>
-        <td>Client: CAT5e ethernet or better</td>
-    </tr>
-</table>
+### Build from source
+```bash
+git clone https://github.com/gersiaaan/MacShine.git ~/MacShine
+bash ~/MacShine/scripts/build-macshine.sh --deps
+```
+Needs Homebrew and the Xcode Command Line Tools. Installs `/Applications/MacShine.app`.
+Optional microphone driver: see [MACSHINE.md](MACSHINE.md).
 
-## ❓ Support
+## Settings
+All options live in the web UI (Audio/Video) or in `sunshine.conf`:
 
-Our support methods are listed in our [LizardByte Docs](https://docs.lizardbyte.dev/latest/about/support.html).
+| Setting | Default | What it does |
+|---|---|---|
+| `macos_virtual_display` | on | Create a virtual display per device |
+| `macos_virtual_display_hidpi` | on | Retina rendering |
+| `macos_virtual_display_scale` | `100` | Display size, 50 – 200 % |
+| `macos_virtual_display_primary` | on | Menu bar and Dock on the streamed display |
+| `macos_virtual_display_disable_host` | off | Turn the Mac's own displays off while streaming |
+| `macos_block_local_input` | on | Ignore the Mac's keyboard and trackpad while connected |
+| `macos_stop_stream_hotkey` | on | Cmd + Esc ends the stream |
 
-## 💲 Sponsors and Supporters
+Full details in [MACSHINE.md](MACSHINE.md).
 
-<p align="center">
-  <img src='https://cdn.jsdelivr.net/gh/LizardByte/contributors@dist/sponsors.svg' alt="Sponsors"/>
-</p>
+## Good to know
+- MacShine uses private macOS APIs (`CGVirtualDisplay`, `CGSConfigureDisplayEnabled`). A macOS update can break them.
+- One stream at a time.
+- If a virtual display cannot be created, MacShine falls back to streaming the Mac's real screen.
 
-## 👥 Contributors
+## Credits
+Built by **Chang Cao** ([ARKSITE](https://arksite.de)) together with **Claude**.
 
-Thank you to all the contributors who have helped make Sunshine better!
+MacShine stands on the shoulders of
+[Sunshine](https://github.com/LizardByte/Sunshine) by LizardByte (streaming engine),
+the virtual display idea from [Apollo](https://github.com/ClassicOldSong/Apollo) and
+[OpenDisplay](https://github.com/peetzweg/opendisplay),
+and [Moonlight](https://moonlight-stream.org) on the client side. Thank you.
 
-### GitHub
-
-<p align="center">
-  <img src='https://cdn.jsdelivr.net/gh/LizardByte/contributors@dist/github.Sunshine.svg' alt="GitHub contributors"/>
-</p>
-
-### CrowdIn
-
-<p align="center">
-  <img src='https://cdn.jsdelivr.net/gh/LizardByte/contributors@dist/crowdin.606145.svg' alt="CrowdIn contributors"/>
-</p>
+Licensed under [GPL-3.0](LICENSE), like Sunshine.
