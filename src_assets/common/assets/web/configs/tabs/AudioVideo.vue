@@ -67,6 +67,66 @@ const config = ref(props.config)
       </template>
     </PlatformLayout>
 
+    <!-- Audio Delay -->
+    <div class="mb-3">
+      <label for="audio_delay" class="form-label">{{ $t('config.audio_delay') }}</label>
+      <input type="number" class="form-control" id="audio_delay" min="0" max="500" step="5"
+             placeholder="0" v-model="config.audio_delay" />
+      <div class="form-text">{{ $t('config.audio_delay_desc') }}</div>
+    </div>
+
+    <PlatformLayout :platform="platform">
+      <template #macos>
+        <!-- Client Microphone -->
+        <Checkbox class="mb-3"
+                  id="client_mic"
+                  locale-prefix="config"
+                  v-model="config.client_mic"
+                  default="true"
+        ></Checkbox>
+
+        <!-- Client Microphone as Default Input -->
+        <Checkbox class="mb-3"
+                  id="client_mic_default_input"
+                  locale-prefix="config"
+                  v-model="config.client_mic_default_input"
+                  default="true"
+        ></Checkbox>
+
+        <!-- Client Microphone Voice Isolation -->
+        <Checkbox class="mb-3"
+                  id="client_mic_voice_isolation"
+                  locale-prefix="config"
+                  v-model="config.client_mic_voice_isolation"
+                  default="true"
+        ></Checkbox>
+
+        <!-- Client Microphone Level -->
+        <div class="mb-3">
+          <label for="client_mic_gain" class="form-label">{{ $t('config.client_mic_gain') }}</label>
+          <input type="number" class="form-control" id="client_mic_gain" min="-30" max="12" step="1"
+                 placeholder="4" v-model="config.client_mic_gain" />
+          <div class="form-text">{{ $t('config.client_mic_gain_desc') }}</div>
+        </div>
+
+        <!-- Client Microphone Echo Cancellation -->
+        <Checkbox class="mb-3"
+                  id="client_mic_echo_cancellation"
+                  locale-prefix="config"
+                  v-model="config.client_mic_echo_cancellation"
+                  default="true"
+        ></Checkbox>
+
+        <!-- Client Microphone Voice Equalizer -->
+        <Checkbox class="mb-3"
+                  id="client_mic_eq"
+                  locale-prefix="config"
+                  v-model="config.client_mic_eq"
+                  default="true"
+        ></Checkbox>
+      </template>
+    </PlatformLayout>
+
     <!-- Disable Audio -->
     <Checkbox class="mb-3"
               id="stream_audio"
@@ -143,6 +203,12 @@ const config = ref(props.config)
                   id="macos_stop_stream_hotkey"
                   locale-prefix="config"
                   v-model="config.macos_stop_stream_hotkey"
+                  default="true"
+        ></Checkbox>
+        <Checkbox class="mb-3"
+                  id="macos_block_local_input"
+                  locale-prefix="config"
+                  v-model="config.macos_block_local_input"
                   default="true"
         ></Checkbox>
       </template>

@@ -23,6 +23,10 @@
 #include <src/display_device.h>
 #include <src/rtsp.h>
 
+#ifdef __APPLE__
+  #include <src/platform/macos/virtual_display.h>
+#endif
+
 namespace {
   using config_option_e = config::video_t::dd_t::config_option_e;
   using device_prep_t = display_device::SingleDisplayConfiguration::DevicePreparation;
@@ -724,4 +728,20 @@ TEST(DisplayDeviceRevert, RedockRestoresPendingSettings) {
   ASSERT_TRUE(manager_ptr->wait_for_hdr_restore(2s));
   EXPECT_GE(manager_ptr->progress().revert_calls, 2);
   EXPECT_TRUE(wait_until_revert_stops());
+}
+
+TEST(DisplayDeviceVirtualDisplay, ReleaseKeepsTheDisplayForTheGracePeriodAndRemoveEndsIt) {
+  display_device::release_virtual_display();
+#ifdef __APPLE__
+  EXPECT_TRUE(platf::virtual_display::removal_pending());
+#endif
+
+  display_device::remove_virtual_display();
+#ifdef __APPLE__
+  EXPECT_FALSE(platf::virtual_display::removal_pending());
+#endif
+}
+
+TEST(DisplayDeviceVirtualDisplay, GracePeriodIsThirtySeconds) {
+  EXPECT_EQ(display_device::VIRTUAL_DISPLAY_LINGER, std::chrono::seconds {30});
 }

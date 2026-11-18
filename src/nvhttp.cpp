@@ -634,11 +634,22 @@ namespace nvhttp {
     return pair_session_insert_e::ADDED;
   }
 
-  bool evict_abandoned_pair_session(const std::string &unique_id) {
+  bool evict_abandoned_pair_session(const std::string &unique_id, const std::string_view address) {
     std::scoped_lock lock {map_id_sess_mutex()};
     const auto sess_it = map_id_sess.find(unique_id);
-    if (sess_it == map_id_sess.end() || sess_it->second.last_phase == PAIR_PHASE::NONE) {
+    if (sess_it == map_id_sess.end()) {
       return false;
+    }
+    if (sess_it->second.last_phase == PAIR_PHASE::NONE) {
+      // A pending approval is only replaced by a retry from the same device.
+      if (address.empty() || sess_it->second.async_insert_pin.address != address) {
+        return false;
+      }
+      pt::ptree tree;
+      tree.put("root.paired", 0);
+      tree.put("root.<xmlattr>.status_code", 409);
+      tree.put("root.<xmlattr>.status_message", "Pairing session replaced by a newer request");
+      write_pairing_response(sess_it->second, tree);
     }
 
     complete_pairing(sess_it->second, false);
@@ -1019,9 +1030,10 @@ namespace nvhttp {
 
     std::string pairing_id;
     auto insert_result = insert_pair_session(make_session(), pairing_id);
-    if (insert_result == pair_session_insert_e::ALREADY_EXISTS && evict_abandoned_pair_session(unique_id)) {
-      // The previous handshake was abandoned mid-flight; the old session cannot resume,
-      // so replace it with a fresh one and retry the insert once.
+    const auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    if (insert_result == pair_session_insert_e::ALREADY_EXISTS && evict_abandoned_pair_session(unique_id, address)) {
+      // The previous attempt was abandoned (mid-handshake, or the same device cancelled while
+      // waiting for the PIN); it cannot resume, so replace it with a fresh one and retry once.
       insert_result = insert_pair_session(make_session(), pairing_id);
     }
     switch (insert_result) {

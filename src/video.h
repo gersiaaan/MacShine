@@ -69,6 +69,15 @@ namespace video {
   int select_h264_profile(std::string_view encoder_name, const config_t &config, int amd_coder);
 
   /**
+   * @brief Select the effective FFmpeg HEVC profile for an encoder configuration.
+   *
+   * @param encoder_name FFmpeg encoder name selected for the stream.
+   * @param config Encoding configuration requested by the remote client.
+   * @return FFmpeg HEVC profile applied to the codec context, or AV_PROFILE_UNKNOWN to let the encoder choose.
+   */
+  int select_hevc_profile(std::string_view encoder_name, const config_t &config);
+
+  /**
    * @brief Map an FFmpeg hardware device type to Sunshine's memory type.
    *
    * @param type FFmpeg hardware device type reported by the encoder backend.

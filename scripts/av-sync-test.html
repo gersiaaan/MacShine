@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A/V Sync Test</title>
+<style>
+  :root {
+    --bg: #0b0b0d;
+    --fg: #e8e8ea;
+    --muted: #8a8a92;
+    --accent: #3fd17a;
+    --line: #2a2a30;
+    --flash: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 16px/1.4 -apple-system, system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 20px 16px; user-select: none; }
+  h1 { font-size: 20px; margin: 0; font-weight: 600; }
+  p.hint { margin: 0; color: var(--muted); max-width: 720px; text-align: center; }
+  #stage { position: relative; width: min(900px, 100%); aspect-ratio: 3 / 1; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #000; }
+  #flash { position: absolute; inset: 0; background: var(--flash); opacity: 0; }
+  #center { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); opacity: .7; }
+  #dot { position: absolute; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; background: #ff4d4d; }
+  #count { position: absolute; right: 12px; bottom: 8px; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+  button { font: inherit; color: var(--fg); background: #1b1b20; border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; min-width: 64px; cursor: pointer; }
+  button:active { background: #2a2a32; }
+  button.primary { background: var(--accent); color: #04120a; border-color: transparent; font-weight: 600; }
+  #offset { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 190px; text-align: center; }
+  #meaning { color: var(--muted); text-align: center; min-height: 1.4em; }
+  input[type=range] { width: min(700px, 100%); }
+  label { color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  #diag { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; }
+</style>
+</head>
+<body>
+  <h1>A/V Sync Test</h1>
+  <p class="hint">Bei jedem Piep blitzt das Feld weiß und der rote Punkt steht auf der grünen Linie. Verschiebe das Bild, bis Blitz und Piep auf dem Stream-Gerät gleichzeitig wirken. Der eingestellte Wert ist dann der Versatz im Stream.</p>
+
+  <div id="stage">
+    <div id="flash"></div>
+    <div id="center"></div>
+    <div id="dot"></div>
+    <div id="count"></div>
+  </div>
+
+  <div class="row">
+    <button id="start" class="primary">Start</button>
+    <label><input type="checkbox" id="irregular"> unregelmäßige Abstände</label>
+  </div>
+
+  <div class="row">
+    <button data-step="-20">−20</button>
+    <button data-step="-5">−5</button>
+    <div id="offset">0 ms</div>
+    <button data-step="5">+5</button>
+    <button data-step="20">+20</button>
+  </div>
+  <input type="range" id="slider" min="-300" max="300" step="1" value="0">
+  <div id="meaning">Bild und Ton werden gleichzeitig ausgegeben.</div>
+  <div class="row"><button id="reset">Auf 0</button></div>
+  <div id="diag"></div>
+
+<script>
+(() => {
+  const flash = document.getElementById('flash');
+  const dot = document.getElementById('dot');
+  const stage = document.getElementById('stage');
+  const count = document.getElementById('count');
+  const slider = document.getElementById('slider');
+  const offsetEl = document.getElementById('offset');
+  const meaning = document.getElementById('meaning');
+  const diag = document.getElementById('diag');
+  const irregular = document.getElementById('irregular');
+  const startBtn = document.getElementById('start');
+
+  const FLASH_MS = 60;
+  const BEEP_S = 0.03;
+  const SWEEP_MS = 1000;
+
+  let ctx = null;
+  let running = false;
+  let offsetMs = 0;   // > 0: picture is delayed relative to the sound
+  let beats = [];     // audio context times of scheduled beeps
+  let nextBeat = 0;
+  let beatCount = 0;
+
+  try {
+    const saved = parseInt(localStorage.getItem('avsync-offset') || '0', 10);
+    if (!Number.isNaN(saved)) offsetMs = saved;
+  } catch (e) {}
+
+  function setOffset(v) {
+    offsetMs = Math.max(-300, Math.min(300, Math.round(v)));
+    slider.value = offsetMs;
+    offsetEl.textContent = (offsetMs > 0 ? '+' : '') + offsetMs + ' ms';
+    if (offsetMs > 0) meaning.textContent = `Bild ${offsetMs} ms verzögert → wenn synchron: der Ton kommt ${offsetMs} ms nach dem Bild an.`;
+    else if (offsetMs < 0) meaning.textContent = `Ton ${-offsetMs} ms verzögert → wenn synchron: das Bild kommt ${-offsetMs} ms nach dem Ton an.`;
+    else meaning.textContent = 'Bild und Ton werden gleichzeitig ausgegeben.';
+    try { localStorage.setItem('avsync-offset', String(offsetMs)); } catch (e) {}
+  }
+
+  // Map a time on the audio clock to performance.now(), including the output latency of this machine.
+  function perfTimeOf(audioTime) {
+    const ts = ctx.getOutputTimestamp ? ctx.getOutputTimestamp() : null;
+    if (ts && ts.performanceTime > 0) {
+      return ts.performanceTime + (audioTime - ts.contextTime) * 1000;
+    }
+    const lat = (ctx.outputLatency || ctx.baseLatency || 0);
+    return performance.now() + (audioTime - ctx.currentTime + lat) * 1000;
+  }
+
+  function beep(at) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 1000;
+    gain.gain.setValueAtTime(0, at);
+    gain.gain.linearRampToValueAtTime(0.6, at + 0.002);
+    gain.gain.setValueAtTime(0.6, at + BEEP_S - 0.004);
+    gain.gain.linearRampToValueAtTime(0, at + BEEP_S);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + BEEP_S + 0.01);
+  }
+
+  function interval() {
+    return irregular.checked ? 0.6 + Math.random() * 1.2 : 1.0;
+  }
+
+  // Keep beeps scheduled ~1.5 s ahead; a negative offset schedules each beep later than its beat.
+  function schedule() {
+    const soundDelay = Math.max(0, -offsetMs) / 1000;
+    while (nextBeat < ctx.currentTime + 1.5) {
+      beep(nextBeat + soundDelay);
+      beats.push(nextBeat);
+      nextBeat += interval();
+    }
+    while (beats.length > 8) beats.shift();
+  }
+
+  function frame() {
+    if (!running) return;
+    schedule();
+    const now = performance.now();
+    const pictureDelay = Math.max(0, offsetMs);
+
+    // Visual event time for each beat. A positive offset delays the picture; a negative one
+    // delays the sound (in schedule()), so the picture stays on the beat itself.
+    let prev = -Infinity, next = Infinity;
+    for (const b of beats) {
+      const v = perfTimeOf(b) + pictureDelay;
+      if (v <= now && v > prev) prev = v;
+      if (v > now && v < next) next = v;
+    }
+
+    const sinceLast = now - prev;
+    flash.style.opacity = sinceLast >= 0 && sinceLast < FLASH_MS ? '1' : '0';
+    if (sinceLast >= 0 && sinceLast < 17 && frame.lastPrev !== prev) {
+      beatCount++;
+      frame.lastPrev = prev;
+      count.textContent = beatCount;
+    }
+
+    // The dot sweeps left to right and crosses the centre line exactly at the visual event.
+    const w = stage.clientWidth;
+    const toNext = next - now;
+    let phase;
+    if (toNext <= SWEEP_MS / 2) phase = 0.5 - toNext / SWEEP_MS;
+    else if (sinceLast <= SWEEP_MS / 2) phase = 0.5 + sinceLast / SWEEP_MS;
+    else phase = -1;
+    dot.style.opacity = phase < 0 ? '0' : '1';
+    dot.style.left = (Math.max(0, phase) * w) + 'px';
+
+    const lat = ((ctx.outputLatency || 0) * 1000).toFixed(1);
+    const base = ((ctx.baseLatency || 0) * 1000).toFixed(1);
+    diag.textContent = `Audio-Ausgabelatenz lokal: ${lat} ms (Basis ${base} ms) · bereits ausgeglichen`;
+
+    requestAnimationFrame(frame);
+  }
+
+  startBtn.addEventListener('click', async () => {
+    if (running) {
+      running = false;
+      await ctx.close();
+      ctx = null;
+      flash.style.opacity = '0';
+      startBtn.textContent = 'Start';
+      return;
+    }
+    ctx = new AudioContext({ latencyHint: 'interactive' });
+    await ctx.resume();
+    beats = [];
+    nextBeat = ctx.currentTime + 0.5;
+    beatCount = 0;
+    running = true;
+    startBtn.textContent = 'Stop';
+    requestAnimationFrame(frame);
+  });
+
+  document.querySelectorAll('[data-step]').forEach(b =>
+    b.addEventListener('click', () => setOffset(offsetMs + parseInt(b.dataset.step, 10))));
+  slider.addEventListener('input', () => setOffset(parseInt(slider.value, 10)));
+  document.getElementById('reset').addEventListener('click', () => setOffset(0));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') setOffset(offsetMs + (e.shiftKey ? 20 : 5));
+    if (e.key === 'ArrowLeft') setOffset(offsetMs - (e.shiftKey ? 20 : 5));
+    if (e.key === ' ') { e.preventDefault(); startBtn.click(); }
+  });
+
+  setOffset(offsetMs);
+})();
+</script>
+</body>
+</html>

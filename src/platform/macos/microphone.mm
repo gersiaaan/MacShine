@@ -2,6 +2,9 @@
  * @file src/platform/macos/microphone.mm
  * @brief Definitions for microphone capture on macOS.
  */
+// standard includes
+#include <chrono>
+
 // local includes
 #include "src/config.h"
 #include "src/logging.h"
@@ -16,6 +19,13 @@ namespace platf {
    */
   struct av_mic_t: public mic_t {
     AVAudio *av_audio_capture {};  ///< AV audio capture.
+    std::uint32_t channels {2};  ///< Interleaved channels per captured frame.
+    std::uint64_t trimmed_bytes {};  ///< Old audio dropped to bound latency since the last report.
+    std::uint32_t trims {};  ///< Number of backlog trims since the last report.
+    std::uint32_t max_backlog_bytes {};  ///< Largest backlog seen since the last report.
+    std::uint64_t reported_overflow_bytes {};  ///< Ring buffer overflow total at the last report.
+    std::uint32_t reported_conversion_failures {};  ///< Conversion failure total at the last report.
+    std::chrono::steady_clock::time_point next_report {std::chrono::steady_clock::now() + 10s};  ///< When drop statistics are logged next.
 
     ~av_mic_t() override {
       [av_audio_capture release];
@@ -32,6 +42,8 @@ namespace platf {
       uint8_t *dst = reinterpret_cast<uint8_t *>(sample_in.data());
 
       uint32_t remaining = neededBytes;
+
+      trim_backlog();
 
       while (remaining > 0) {
         uint32_t avail = 0;
@@ -59,7 +71,57 @@ namespace platf {
         remaining -= toCopy;
       }
 
+      report_drops();
       return capture_e::ok;
+    }
+
+    /**
+     * @brief Drop the oldest queued audio when the consumer fell behind, so the stream does not lag.
+     */
+    void trim_backlog() {
+      const std::uint32_t frame_bytes = channels * sizeof(float);
+      const std::uint32_t bytes_per_ms = 48 * frame_bytes;
+
+      uint32_t backlog = 0;
+      TPCircularBufferTail(&av_audio_capture->audioSampleBuffer, &backlog);
+      max_backlog_bytes = std::max(max_backlog_bytes, backlog);
+
+      const auto dropped = trimAudioBacklog(&av_audio_capture->audioSampleBuffer, kAudioMaxBacklogMs * bytes_per_ms, kAudioKeepBacklogMs * bytes_per_ms, frame_bytes);
+      if (dropped > 0) {
+        trimmed_bytes += dropped;
+        ++trims;
+      }
+    }
+
+    /**
+     * @brief Log every 10 seconds how much audio was lost, if any, so crackling can be traced.
+     */
+    void report_drops() {
+      const auto now = std::chrono::steady_clock::now();
+      if (now < next_report) {
+        return;
+      }
+      next_report = now + 10s;
+
+      const std::uint32_t bytes_per_ms = 48 * channels * sizeof(float);
+      const std::uint64_t overflow_total = av_audio_capture->overflowedBytes.load(std::memory_order_relaxed);
+      const std::uint32_t conversion_total = av_audio_capture->conversionFailures.load(std::memory_order_relaxed);
+      const auto overflow_ms = (overflow_total - reported_overflow_bytes) / bytes_per_ms;
+      const auto conversion_failures = conversion_total - reported_conversion_failures;
+
+      if (overflow_ms > 0 || trims > 0 || conversion_failures > 0) {
+        BOOST_LOG(warning) << "Audio capture dropped audio in the last 10s: "sv
+                           << overflow_ms << "ms on ring buffer overflow, "sv
+                           << trimmed_bytes / bytes_per_ms << "ms in "sv << trims << " backlog trims, "sv
+                           << conversion_failures << " failed conversions, max backlog "sv
+                           << max_backlog_bytes / bytes_per_ms << "ms"sv;
+      }
+
+      reported_overflow_bytes = overflow_total;
+      reported_conversion_failures = conversion_total;
+      trimmed_bytes = 0;
+      trims = 0;
+      max_backlog_bytes = 0;
     }
   };
 
@@ -98,7 +160,8 @@ namespace platf {
 
       // Set the host audio enabled flag from the stream configuration
       mic->av_audio_capture.hostAudioEnabled = host_audio_enabled ? YES : NO;
-      BOOST_LOG(debug) << "Set hostAudioEnabled to: "sv << (host_audio_enabled ? "YES" : "NO");
+      mic->channels = static_cast<std::uint32_t>(channels);
+      BOOST_LOG(info) << "Host audio playback during the stream: "sv << (host_audio_enabled ? "on"sv : "off"sv);
 
       if (config::audio.sink.empty()) {
         // Use macOS system-wide audio tap

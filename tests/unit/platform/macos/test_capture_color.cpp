@@ -23,11 +23,31 @@ TEST(MacosCaptureColorTest, PixelFormatFollowsBitDepthAndRange) {
   EXPECT_EQ(pixel_format(true, true), kCVPixelFormatType_420YpCbCr10BiPlanarFullRange);
 }
 
+TEST(MacosCaptureColorTest, Yuv444IsCapturedInTheOnly444FormatScreenCaptureKitOffers) {
+  EXPECT_EQ(pixel_format(false, false, true), kCVPixelFormatType_444YpCbCr10BiPlanarFullRange);
+  EXPECT_EQ(pixel_format(false, true, true), kCVPixelFormatType_444YpCbCr10BiPlanarFullRange);
+}
+
+TEST(MacosCaptureColorTest, Yuv444IsEncodedFrom8BitInTheStreamRange) {
+  EXPECT_EQ(yuv444_encode_format(false), kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange);
+  EXPECT_EQ(yuv444_encode_format(true), kCVPixelFormatType_444YpCbCr8BiPlanarFullRange);
+}
+
+TEST(MacosCaptureColorTest, Yuv444IsOnlySupportedFor8BitHevc) {
+  EXPECT_TRUE(yuv444_supported("hevc_videotoolbox", false));
+  EXPECT_FALSE(yuv444_supported("hevc_videotoolbox", true));
+  EXPECT_FALSE(yuv444_supported("h264_videotoolbox", false));
+  EXPECT_FALSE(yuv444_supported("av1_videotoolbox", false));
+}
+
 TEST(MacosCaptureColorTest, FullRangeDetectionMatchesPixelFormats) {
   EXPECT_TRUE(is_full_range(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange));
   EXPECT_TRUE(is_full_range(kCVPixelFormatType_420YpCbCr10BiPlanarFullRange));
   EXPECT_FALSE(is_full_range(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange));
   EXPECT_FALSE(is_full_range(kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange));
+  EXPECT_TRUE(is_full_range(kCVPixelFormatType_444YpCbCr8BiPlanarFullRange));
+  EXPECT_TRUE(is_full_range(kCVPixelFormatType_444YpCbCr10BiPlanarFullRange));
+  EXPECT_FALSE(is_full_range(kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange));
   EXPECT_FALSE(is_full_range(kCVPixelFormatType_32BGRA));
 }
 
@@ -52,13 +72,16 @@ TEST(MacosCaptureColorTest, ZeroCopyDeviceRequestsTheStreamRange) {
     platf::pix_fmt_e pix_fmt;
     bool full_range;
     OSType expected;
+    bool converts;
   };
 
   const case_t cases[] {
-    {platf::pix_fmt_e::nv12, false, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange},
-    {platf::pix_fmt_e::nv12, true, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange},
-    {platf::pix_fmt_e::p010, false, kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange},
-    {platf::pix_fmt_e::p010, true, kCVPixelFormatType_420YpCbCr10BiPlanarFullRange},
+    {platf::pix_fmt_e::nv12, false, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, false},
+    {platf::pix_fmt_e::nv12, true, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, false},
+    {platf::pix_fmt_e::p010, false, kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange, false},
+    {platf::pix_fmt_e::p010, true, kCVPixelFormatType_420YpCbCr10BiPlanarFullRange, false},
+    {platf::pix_fmt_e::nv24, false, kCVPixelFormatType_444YpCbCr10BiPlanarFullRange, true},
+    {platf::pix_fmt_e::nv24, true, kCVPixelFormatType_444YpCbCr10BiPlanarFullRange, true},
   };
 
   for (const auto &test_case : cases) {
@@ -78,6 +101,7 @@ TEST(MacosCaptureColorTest, ZeroCopyDeviceRequestsTheStreamRange) {
     EXPECT_EQ(result, 0);
     EXPECT_TRUE(device.hardware);
     EXPECT_EQ(static_cast<OSType>(requested), test_case.expected);
+    EXPECT_EQ(device.converts_frames(), test_case.converts);
   }
 }
 

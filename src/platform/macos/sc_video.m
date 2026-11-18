@@ -5,7 +5,9 @@
  * Compiled with ARC (see cmake/compile_definitions/macos.cmake).
  */
 // local includes
+#import "frame_timing.h"
 #import "sc_video.h"
+#import "touch_input.h"
 
 // platform includes
 #import <os/lock.h>
@@ -49,6 +51,8 @@ API_AVAILABLE(macos(12.3))
   OSType _streamPixelFormat;
   CFStringRef _streamColorMatrix;
   CFStringRef _streamColorSpaceName;
+  BOOL _streamCursorHidden;
+  BOOL _cursorUpdating;
 }
 
 + (BOOL)isAvailable {
@@ -74,7 +78,7 @@ API_AVAILABLE(macos(12.3))
     self.pixelFormat = kCVPixelFormatType_32BGRA;
     self.frameWidth = (int) CGDisplayModeGetPixelWidth(mode);
     self.frameHeight = (int) CGDisplayModeGetPixelHeight(mode);
-    self.minFrameDuration = CMTimeMake(1, frameRate > 0 ? frameRate : 60);
+    self.minFrameDuration = macshine_capture_min_frame_interval(frameRate);
     CGDisplayModeRelease(mode);
 
     // Find the SCDisplay for this display id. Requires Screen Recording permission.
@@ -160,16 +164,16 @@ API_AVAILABLE(macos(12.3))
 }
 
 /**
- * @brief Start the shared stream, or reconfigure it when the requested frame format changed.
- * @return YES when a stream with the current configuration is running.
+ * @brief Build the stream configuration for a frame format.
+ * @param width Frame width in pixels.
+ * @param height Frame height in pixels.
+ * @param pixelFormat Frame pixel format.
+ * @param colorMatrix YCbCr matrix, or NULL for the default.
+ * @param colorSpaceName Color space, or NULL for the display's.
+ * @param cursorHidden Whether the pointer is left out of the frames.
+ * @return Stream configuration.
  */
-- (BOOL)ensureStream API_AVAILABLE(macos(12.3)) {
-  const size_t width = (size_t) self.frameWidth;
-  const size_t height = (size_t) self.frameHeight;
-  const OSType pixelFormat = self.pixelFormat;
-  const CFStringRef colorMatrix = self.colorMatrix;
-  const CFStringRef colorSpaceName = self.colorSpaceName;
-
+- (SCStreamConfiguration *)configurationWithWidth:(size_t)width height:(size_t)height pixelFormat:(OSType)pixelFormat colorMatrix:(CFStringRef)colorMatrix colorSpaceName:(CFStringRef)colorSpaceName cursorHidden:(BOOL)cursorHidden API_AVAILABLE(macos(12.3)) {
   SCStreamConfiguration *configuration = [[SCStreamConfiguration alloc] init];
   configuration.width = width;
   configuration.height = height;
@@ -183,8 +187,55 @@ API_AVAILABLE(macos(12.3))
     configuration.colorSpaceName = colorSpaceName;
   }
   configuration.minimumFrameInterval = self.minFrameDuration;
-  configuration.showsCursor = YES;
+  // Touch input hides the pointer, since a finger points by itself (see touch_input.h).
+  configuration.showsCursor = !cursorHidden;
   configuration.queueDepth = 5;
+  return configuration;
+}
+
+/**
+ * Must run on _queue: show or hide the pointer in the running stream when touch or mouse input
+ * changed whether it should be visible.
+ */
+- (void)updateCursorVisibility API_AVAILABLE(macos(12.3)) {
+  const BOOL hidden = macshine_stream_cursor_hidden();
+  SCStream *stream = _stream;
+  if (!stream || _cursorUpdating || hidden == _streamCursorHidden) {
+    return;
+  }
+  _cursorUpdating = YES;
+  SCStreamConfiguration *configuration = [self configurationWithWidth:_streamWidth height:_streamHeight pixelFormat:_streamPixelFormat colorMatrix:_streamColorMatrix colorSpaceName:_streamColorSpaceName cursorHidden:hidden];
+  __weak SCVideo *weakSelf = self;
+  [stream updateConfiguration:configuration
+            completionHandler:^(NSError *error) {
+              SCVideo *strongSelf = weakSelf;
+              if (!strongSelf) {
+                return;
+              }
+              dispatch_async(strongSelf->_queue, ^{
+                if (error) {
+                  NSLog(@"[SCVideo] updating the pointer visibility failed: %@", error);
+                }
+                // Not retried on failure, which would repeat for every frame.
+                strongSelf->_streamCursorHidden = hidden;
+                strongSelf->_cursorUpdating = NO;
+              });
+            }];
+}
+
+/**
+ * @brief Start the shared stream, or reconfigure it when the requested frame format changed.
+ * @return YES when a stream with the current configuration is running.
+ */
+- (BOOL)ensureStream API_AVAILABLE(macos(12.3)) {
+  const size_t width = (size_t) self.frameWidth;
+  const size_t height = (size_t) self.frameHeight;
+  const OSType pixelFormat = self.pixelFormat;
+  const CFStringRef colorMatrix = self.colorMatrix;
+  const CFStringRef colorSpaceName = self.colorSpaceName;
+
+  const BOOL cursorHidden = macshine_stream_cursor_hidden();
+  SCStreamConfiguration *configuration = [self configurationWithWidth:width height:height pixelFormat:pixelFormat colorMatrix:colorMatrix colorSpaceName:colorSpaceName cursorHidden:cursorHidden];
 
   if (_stream) {
     if (_streamWidth == width && _streamHeight == height && _streamPixelFormat == pixelFormat && _streamColorMatrix == colorMatrix && _streamColorSpaceName == colorSpaceName) {
@@ -205,6 +256,7 @@ API_AVAILABLE(macos(12.3))
     [self setStreamFormatWidth:width height:height pixelFormat:pixelFormat];
     _streamColorMatrix = colorMatrix;
     _streamColorSpaceName = colorSpaceName;
+    _streamCursorHidden = cursorHidden;
     return YES;
   }
 
@@ -231,6 +283,7 @@ API_AVAILABLE(macos(12.3))
   [self setStreamFormatWidth:width height:height pixelFormat:pixelFormat];
   _streamColorMatrix = colorMatrix;
   _streamColorSpaceName = colorSpaceName;
+  _streamCursorHidden = cursorHidden;
 
   // Idle screens produce no new frames; re-deliver the last frame so consumers never starve.
   _redeliverTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _queue);
@@ -240,6 +293,8 @@ API_AVAILABLE(macos(12.3))
   dispatch_source_set_event_handler(_redeliverTimer, ^{
     SCVideo *strongSelf = weakSelf;
     if (strongSelf && clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - strongSelf->_lastDeliveryNs >= interval) {
+      // A hidden pointer that moves draws no new frame, so check it here too.
+      [strongSelf updateCursorVisibility];
       [strongSelf redeliverTo:nil];
     }
   });
@@ -355,6 +410,7 @@ API_AVAILABLE(macos(12.3))
   if (previous) {
     CFRelease(previous);
   }
+  [self updateCursorVisibility];
   [self deliverSample:sampleBuffer to:nil];
 }
 

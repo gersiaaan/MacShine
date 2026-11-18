@@ -8,7 +8,9 @@
   #include "../../../tests_common.h"
 
   // standard includes
+  #include <chrono>
   #include <string>
+  #include <thread>
   #include <utility>
   #include <vector>
 
@@ -255,5 +257,47 @@ TEST(MacosVirtualDisplayTest, ReportSizeWithoutActiveDisplayIsIgnored) {
   platf::virtual_display::report_size("119", 0, 1560, 1248, 780);
   platf::virtual_display::report_size("119", 2496, 1560, 0, 780);
   EXPECT_TRUE(platf::virtual_display::active_display_id().empty());
+}
+TEST(MacosVirtualDisplayTest, DestroyAfterSchedulesARemovalThatDestroyCancels) {
+  using namespace std::chrono_literals;
+
+  platf::virtual_display::destroy_after(1h);
+  EXPECT_TRUE(platf::virtual_display::removal_pending());
+
+  platf::virtual_display::destroy();
+  EXPECT_FALSE(platf::virtual_display::removal_pending());
+}
+
+TEST(MacosVirtualDisplayTest, DestroyAfterRemovesOnceTheDelayPasses) {
+  using namespace std::chrono_literals;
+
+  platf::virtual_display::destroy_after(20ms);
+  const auto deadline {std::chrono::steady_clock::now() + 5s};
+  while (platf::virtual_display::removal_pending() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(5ms);
+  }
+  EXPECT_FALSE(platf::virtual_display::removal_pending());
+  EXPECT_TRUE(platf::virtual_display::active_display_id().empty());
+}
+
+TEST(MacosVirtualDisplayTest, DestroyAfterReplacesThePendingDeadline) {
+  using namespace std::chrono_literals;
+
+  platf::virtual_display::destroy_after(20ms);
+  platf::virtual_display::destroy_after(1h);
+  std::this_thread::sleep_for(100ms);
+  EXPECT_TRUE(platf::virtual_display::removal_pending());
+
+  // A finished worker is restarted by the next schedule.
+  platf::virtual_display::destroy_after(10ms);
+  const auto deadline {std::chrono::steady_clock::now() + 5s};
+  while (platf::virtual_display::removal_pending() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(5ms);
+  }
+  EXPECT_FALSE(platf::virtual_display::removal_pending());
+  platf::virtual_display::destroy_after(1h);
+  EXPECT_TRUE(platf::virtual_display::removal_pending());
+  platf::virtual_display::destroy();
+  EXPECT_FALSE(platf::virtual_display::removal_pending());
 }
 #endif

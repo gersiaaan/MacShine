@@ -34,6 +34,13 @@ namespace platf {
 
   platform_caps::caps_t get_capabilities() {
     platform_caps::caps_t caps = 0;
+    // macOS has no touch input, but touches and pens are turned into mouse gestures (see touch_input.h).
+    if (config::input.native_pen_touch) {
+      caps |= platform_caps::pen_touch;
+    }
+    if (config::audio.client_mic) {
+      caps |= platform_caps::client_mic;
+    }
     const auto runtime = virtualhid::create_runtime();
     if (!runtime) {
       return caps;
@@ -43,10 +50,6 @@ namespace platf {
     if (config::input.gamepad_driver != config::GAMEPAD_DRIVER_NONE && capabilities.supports_gamepad && lvh::get_license_status().license.licensed() && virtualhid::configured_gamepad_supports_controller_extensions()) {
       caps |= platform_caps::controller_touch;
     }
-    if (config::input.native_pen_touch && (capabilities.supports_touchscreen || capabilities.supports_pen_tablet)) {
-      caps |= platform_caps::pen_touch;
-    }
-
     return caps;
   }
 

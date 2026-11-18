@@ -9,6 +9,9 @@
   // test includes
   #include "../../../tests_common.h"
 
+  // standard includes
+  #include <vector>
+
   // platform includes
   #import <AVFoundation/AVFoundation.h>
   #import <CoreAudio/CATapDescription.h>
@@ -166,6 +169,27 @@ TEST(MacosAudioPermissionTest, SystemAudioPermissionProbeUsesUnmutedTemporaryTap
  * @brief Test that setupMicrophone handles nil device input properly.
  * Verifies the method returns an error code when passed a nil device.
  */
+TEST_F(AVAudioTest, SystemTapLeavesOutThisProcess) {
+  NSArray<NSNumber *> *excluded = [AVAudio processesExcludedFromSystemTap];
+
+  pid_t pid = getpid();
+  AudioObjectPropertyAddress address {
+    kAudioHardwarePropertyTranslatePIDToProcessObject,
+    kAudioObjectPropertyScopeGlobal,
+    kAudioObjectPropertyElementMain
+  };
+  AudioObjectID process = kAudioObjectUnknown;
+  UInt32 size = sizeof(process);
+  AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, sizeof(pid), &pid, &size, &process);
+
+  if (process == kAudioObjectUnknown) {
+    EXPECT_EQ(excluded.count, 0u);
+  } else {
+    ASSERT_EQ(excluded.count, 1u);
+    EXPECT_EQ(excluded[0].unsignedIntValue, process);
+  }
+}
+
 TEST_F(AVAudioTest, SetupMicrophoneWithNilDeviceReturnsError) {
   @try {
     AVAudio *avAudio = [[AVAudio alloc] init];
@@ -236,7 +260,7 @@ TEST_F(AVAudioTest, InitializeAudioBuffer) {
     [avAudio initializeAudioBuffer:2];  // Stereo
     EXPECT_NE(avAudio->audioSemaphore, nullptr);
     TPCircularBufferHead(&avAudio->audioSampleBuffer, &avail);
-    EXPECT_GE(avail, 11520);
+    EXPECT_GE(avail, 48000U * platf::kAudioRingBufferMs / 1000 * 2 * sizeof(float));
     [avAudio cleanupAudioBuffer];
 
     [avAudio initializeAudioBuffer:8];  // 7.1 Surround
@@ -546,6 +570,142 @@ TEST_P(ProcessSystemAudioIOProcTest, ProcessAudioInput) {
   @catch (NSException *exception) {
     FAIL() << "Caught NSException: " << ([exception.reason UTF8String] ?: "unknown reason");
   }
+}
+
+/**
+ * @brief Test that a backlog within bounds is left alone.
+ */
+TEST_F(AVAudioTest, TrimAudioBacklogKeepsSmallBacklog) {
+  AVAudio *avAudio = [[AVAudio alloc] init];
+  [avAudio initializeAudioBuffer:2];
+
+  std::vector<float> samples(100 * 2, 0.5f);
+  ASSERT_TRUE(platf::produceAudioBytes(avAudio, samples.data(), samples.size() * sizeof(float)));
+
+  EXPECT_EQ(platf::trimAudioBacklog(&avAudio->audioSampleBuffer, 800, 80, 8), 0U);
+  uint32_t avail = 0;
+  TPCircularBufferTail(&avAudio->audioSampleBuffer, &avail);
+  EXPECT_EQ(avail, 800U);
+
+  [avAudio cleanupAudioBuffer];
+  [avAudio release];
+}
+
+/**
+ * @brief Test that an oversized backlog drops the oldest whole frames and keeps the newest audio.
+ */
+TEST_F(AVAudioTest, TrimAudioBacklogDropsOldestFrames) {
+  AVAudio *avAudio = [[AVAudio alloc] init];
+  [avAudio initializeAudioBuffer:2];
+
+  std::vector<float> samples(101 * 2);
+  for (std::size_t i = 0; i < samples.size(); ++i) {
+    samples[i] = static_cast<float>(i);
+  }
+  ASSERT_TRUE(platf::produceAudioBytes(avAudio, samples.data(), samples.size() * sizeof(float)));
+
+  // 808 bytes queued; keeping 84 bytes rounds the drop down to whole 8-byte frames.
+  EXPECT_EQ(platf::trimAudioBacklog(&avAudio->audioSampleBuffer, 400, 84, 8), 720U);
+  uint32_t avail = 0;
+  auto *tail = static_cast<float *>(TPCircularBufferTail(&avAudio->audioSampleBuffer, &avail));
+  EXPECT_EQ(avail, 88U);
+  EXPECT_FLOAT_EQ(tail[0], 180.0f);
+
+  [avAudio cleanupAudioBuffer];
+  [avAudio release];
+}
+
+/**
+ * @brief Test that a zero frame size never trims, avoiding a division by zero.
+ */
+TEST_F(AVAudioTest, TrimAudioBacklogIgnoresZeroFrameSize) {
+  AVAudio *avAudio = [[AVAudio alloc] init];
+  [avAudio initializeAudioBuffer:2];
+
+  std::vector<float> samples(100 * 2, 0.5f);
+  ASSERT_TRUE(platf::produceAudioBytes(avAudio, samples.data(), samples.size() * sizeof(float)));
+  EXPECT_EQ(platf::trimAudioBacklog(&avAudio->audioSampleBuffer, 100, 10, 0), 0U);
+
+  [avAudio cleanupAudioBuffer];
+  [avAudio release];
+}
+
+/**
+ * @brief Test that audio which does not fit in the ring buffer is counted as overflow.
+ */
+TEST_F(AVAudioTest, ProduceAudioBytesCountsOverflow) {
+  AVAudio *avAudio = [[AVAudio alloc] init];
+  [avAudio initializeAudioBuffer:2];
+
+  uint32_t space = 0;
+  TPCircularBufferHead(&avAudio->audioSampleBuffer, &space);
+  std::vector<uint8_t> fill(space, 0);
+  ASSERT_TRUE(platf::produceAudioBytes(avAudio, fill.data(), space));
+  EXPECT_EQ(avAudio->overflowedBytes.load(), 0U);
+
+  std::vector<float> extra(64, 0.25f);
+  EXPECT_FALSE(platf::produceAudioBytes(avAudio, extra.data(), extra.size() * sizeof(float)));
+  EXPECT_EQ(avAudio->overflowedBytes.load(), extra.size() * sizeof(float));
+
+  // Reinitializing the buffer resets the counters for the next stream.
+  [avAudio initializeAudioBuffer:2];
+  EXPECT_EQ(avAudio->overflowedBytes.load(), 0U);
+  EXPECT_EQ(avAudio->conversionFailures.load(), 0U);
+
+  [avAudio cleanupAudioBuffer];
+  [avAudio release];
+}
+
+/**
+ * @brief Test that a failed conversion never passes device-format audio through as stream audio.
+ */
+TEST_F(AVAudioTest, FailedConversionWritesNoDeviceFormatAudio) {
+  AVAudio *avAudio = [[AVAudio alloc] init];
+  [avAudio initializeAudioBuffer:2];
+
+  AudioStreamBasicDescription source {};
+  source.mSampleRate = 44100;
+  source.mFormatID = kAudioFormatLinearPCM;
+  source.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+  source.mBytesPerPacket = 2 * sizeof(float);
+  source.mFramesPerPacket = 1;
+  source.mBytesPerFrame = 2 * sizeof(float);
+  source.mChannelsPerFrame = 2;
+  source.mBitsPerChannel = 32;
+  AudioStreamBasicDescription target = source;
+  target.mSampleRate = 48000;
+
+  AVAudioIOProcData procData {};
+  procData.avAudio = avAudio;
+  procData.clientRequestedChannels = 2;
+  procData.clientRequestedFrameSize = 240;
+  procData.clientRequestedSampleRate = 48000;
+  procData.aggregateDeviceChannels = 2;
+  procData.aggregateDeviceSampleRate = 44100;
+  ASSERT_EQ(AudioConverterNew(&source, &target, &procData.audioConverter), noErr);
+
+  // A conversion buffer smaller than one output frame makes the converter produce nothing.
+  float conversionBuffer[1] {};
+  procData.conversionBuffer = conversionBuffer;
+  procData.conversionBufferSize = sizeof(conversionBuffer);
+
+  std::vector<float> input(220 * 2, 0.75f);
+  AudioBufferList inputList {};
+  inputList.mNumberBuffers = 1;
+  inputList.mBuffers[0].mNumberChannels = 2;
+  inputList.mBuffers[0].mDataByteSize = static_cast<UInt32>(input.size() * sizeof(float));
+  inputList.mBuffers[0].mData = input.data();
+
+  EXPECT_EQ(platf::systemAudioIOProc(0, nullptr, &inputList, nullptr, nullptr, nullptr, &procData), noErr);
+  EXPECT_EQ(avAudio->conversionFailures.load(), 1U);
+
+  uint32_t avail = 0;
+  TPCircularBufferTail(&avAudio->audioSampleBuffer, &avail);
+  EXPECT_EQ(avail, 0U);
+
+  AudioConverterDispose(procData.audioConverter);
+  [avAudio cleanupAudioBuffer];
+  [avAudio release];
 }
 
 #endif  // __APPLE__

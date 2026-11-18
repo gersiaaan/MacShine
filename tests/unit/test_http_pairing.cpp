@@ -644,6 +644,38 @@ TEST_F(PairingHttpHandlerTest, RetriedGetservercertReplacesAbandonedHandshake) {
   EXPECT_NE(retry_response.get().find("cancelled by operator"), std::string::npos);
 }
 
+TEST_F(PairingHttpHandlerTest, RetryFromSameDeviceReplacesPendingApproval) {
+  // The client cancels its pairing dialog while the PIN is pending and pairs again.
+  std::packaged_task<std::string()> first_request_task {[this]() {
+    return request(server_certificate_target("same-device"));
+  }};
+  auto first_response = first_request_task.get_future();
+  std::jthread first_request_thread {std::move(first_request_task)};
+
+  const auto first_pairing_id = wait_for_pending_pairing();
+  ASSERT_FALSE(first_pairing_id.empty());
+
+  std::packaged_task<std::string()> retry_request_task {[this]() {
+    return request(server_certificate_target("same-device"));
+  }};
+  auto retry_response = retry_request_task.get_future();
+  std::jthread retry_request_thread {std::move(retry_request_task)};
+
+  EXPECT_NE(first_response.get().find("replaced by a newer request"), std::string::npos);
+  std::string second_pairing_id;
+  for (int attempt = 0; attempt < 200; ++attempt) {
+    const auto pending = get_pending_pairings();
+    if (pending.size() == 1 && pending.front().id != first_pairing_id) {
+      second_pairing_id = pending.front().id;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds {10});
+  }
+  ASSERT_FALSE(second_pairing_id.empty());
+  EXPECT_TRUE(cancel_pairing(second_pairing_id));
+  EXPECT_NE(retry_response.get().find("cancelled by operator"), std::string::npos);
+}
+
 TEST_F(PairingHttpHandlerTest, ConsolePinCompletesOrRejectsTheCertificatePhase) {
   setup(PRIVATE_KEY, PUBLIC_CERT);
   config::sunshine.flags[config::flag::PIN_STDIN] = true;
@@ -747,6 +779,22 @@ TEST_F(PairingSessionRegistryTest, DuplicateUniqueIdIsRejectedWithoutReplacingOr
   ASSERT_EQ(pending.size(), 1);
   EXPECT_EQ(pending.front().id, original_pairing_id);
   EXPECT_EQ(pending.front().name, "Original");
+}
+
+TEST_F(PairingSessionRegistryTest, PendingApprovalIsEvictedOnlyForTheSameAddress) {
+  std::string pairing_id;
+  ASSERT_EQ(
+    insert_pair_session(pending_session("evict", "Original", "192.0.2.10"), pairing_id),
+    pair_session_insert_e::ADDED
+  );
+
+  EXPECT_FALSE(evict_abandoned_pair_session("missing", "192.0.2.10"));
+  EXPECT_FALSE(evict_abandoned_pair_session("evict"));
+  EXPECT_FALSE(evict_abandoned_pair_session("evict", "192.0.2.20"));
+  EXPECT_EQ(get_pending_pairings().size(), 1);
+
+  EXPECT_TRUE(evict_abandoned_pair_session("evict", "192.0.2.10"));
+  EXPECT_TRUE(get_pending_pairings().empty());
 }
 
 TEST_F(PairingSessionRegistryTest, PendingSessionStorageIsBounded) {

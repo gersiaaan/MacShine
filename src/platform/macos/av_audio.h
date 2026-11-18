@@ -18,6 +18,7 @@
 #import <CoreAudio/CoreAudio.h>
 
 // standard includes
+#include <atomic>
 #include <functional>
 
 // lib includes
@@ -61,6 +62,50 @@ namespace platf {
    * @param inUserData AudioConverterInputData state used by the callback.
    * @return Core Audio status code from the callback.
    */
+  /**
+   * @brief Capacity of the capture ring buffer in milliseconds of audio.
+   *
+   * Large enough that a briefly stalled consumer does not lose audio; the consumer trims any backlog
+   * beyond kAudioMaxBacklogMs so the stream latency stays low.
+   */
+  constexpr UInt32 kAudioRingBufferMs = 250;
+
+  /**
+   * @brief Backlog in milliseconds above which the consumer drops the oldest captured audio.
+   */
+  constexpr UInt32 kAudioMaxBacklogMs = 40;
+
+  /**
+   * @brief Backlog in milliseconds the consumer keeps after dropping old audio.
+   */
+  constexpr UInt32 kAudioKeepBacklogMs = 10;
+
+  /**
+   * @brief Drop the oldest audio from a ring buffer whose backlog grew too large.
+   *
+   * Keeps the newest @p keepBytes when more than @p maxBytes are queued, rounded down to whole frames
+   * so the channel interleaving stays intact.
+   *
+   * @param buffer Ring buffer to trim.
+   * @param maxBytes Backlog in bytes above which audio is dropped.
+   * @param keepBytes Backlog in bytes kept after trimming.
+   * @param frameBytes Size of one interleaved audio frame in bytes.
+   * @return Number of bytes dropped, 0 when the backlog was within bounds.
+   */
+  UInt32 trimAudioBacklog(TPCircularBuffer *buffer, UInt32 maxBytes, UInt32 keepBytes, UInt32 frameBytes);
+
+  /**
+   * @brief Append captured audio to the shared ring buffer, counting what does not fit.
+   *
+   * Real-time safe: it only touches the ring buffer and atomics.
+   *
+   * @param avAudio Capture object owning the ring buffer and counters.
+   * @param bytes Audio to append.
+   * @param length Number of bytes to append.
+   * @return Whether the audio was stored.
+   */
+  bool produceAudioBytes(AVAudio *avAudio, const void *bytes, UInt32 length);
+
   OSStatus audioConverterComplexInputProc(AudioConverterRef _Nullable inAudioConverter, UInt32 *_Nonnull ioNumberDataPackets, AudioBufferList *_Nonnull ioData, AudioStreamPacketDescription *_Nullable *_Nullable outDataPacketDescription, void *_Nonnull inUserData);
   /**
    * @brief Receive system-audio tap samples from Core Audio.
@@ -114,6 +159,8 @@ typedef struct {
 @public
   TPCircularBuffer audioSampleBuffer;  ///< Shared circular buffer for both audio capture paths
   dispatch_semaphore_t audioSemaphore;  ///< Real-time safe semaphore for signaling audio sample availability
+  std::atomic<uint64_t> overflowedBytes;  ///< Captured bytes dropped because the ring buffer was full
+  std::atomic<uint32_t> conversionFailures;  ///< IOProc cycles whose format conversion failed and were replaced by silence
 @private
   // System-wide audio tap components (Core Audio)
   AudioObjectID tapObjectID;  ///< Core Audio tap object identifier for system audio capture
@@ -145,6 +192,15 @@ typedef struct {
  * @return AVCaptureDevice object if found, nil otherwise
  */
 + (nullable AVCaptureDevice *)findMicrophone:(nullable NSString *)name;
+
+/**
+ * @brief Processes whose audio the system tap leaves out.
+ *
+ * MacShine itself is left out, so the client's microphone that it plays into the virtual
+ * "MacShine" device is not captured and streamed back to the client as an echo.
+ * @return Core Audio process objects to exclude; empty when this process has none yet.
+ */
++ (NSArray<NSNumber *> *)processesExcludedFromSystemTap;
 
 /**
  * @brief Sets up microphone capture using AVFoundation framework.

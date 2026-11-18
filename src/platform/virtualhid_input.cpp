@@ -24,6 +24,7 @@
 #include "virtualhid_input.h"
 
 #ifdef __APPLE__
+  #include "src/platform/macos/touch_input.h"
   #include "src/platform/macos/trackpad_scroll.h"
 #endif
 
@@ -1167,26 +1168,55 @@ namespace platf {
 #endif
 
   void move_mouse(input_t &input, int deltaX, int deltaY) {
+#ifdef __APPLE__
+    // Mouse input shows the pointer again after touch input hid it.
+    platf::touch_input::mouse_used("relative move");
+#endif
     virtualhid::move_mouse(virtualhid::get_input_context(input), deltaX, deltaY);
   }
 
   void move_mouse(input_t &input, const touch_port_t &touch_port, int deltaX, int deltaY) {
+#ifdef __APPLE__
+    // Mouse input shows the pointer again after touch input hid it.
+    platf::touch_input::mouse_used("relative move");
+#endif
     virtualhid::move_mouse(virtualhid::get_input_context(input), touch_port, deltaX, deltaY);
   }
 
   void abs_mouse(input_t &input, const touch_port_t &touch_port, float x, float y) {
+#ifdef __APPLE__
+    // Clients turn some touches into absolute mouse moves too; those would pull the pointer away
+    // from the finger and show it, so they are dropped right after a touch.
+    if (!platf::touch_input::absolute_mouse_allowed()) {
+      return;
+    }
+    // Later ones come from a mouse or touchpad and show the pointer again.
+    platf::touch_input::mouse_used("absolute move");
+#endif
     virtualhid::abs_mouse(virtualhid::get_input_context(input), touch_port, x, y);
   }
 
   void button_mouse(input_t &input, int button, bool release) {
+#ifdef __APPLE__
+    // Mouse input shows the pointer again after touch input hid it.
+    platf::touch_input::mouse_used("button");
+#endif
     virtualhid::button_mouse(virtualhid::get_input_context(input), button, release);
   }
 
   void scroll(input_t &input, int high_res_distance) {
+#ifdef __APPLE__
+    // Mouse input shows the pointer again after touch input hid it.
+    platf::touch_input::mouse_used("scroll");
+#endif
     virtualhid::scroll(virtualhid::get_input_context(input), high_res_distance);
   }
 
   void hscroll(input_t &input, int high_res_distance) {
+#ifdef __APPLE__
+    // Mouse input shows the pointer again after touch input hid it.
+    platf::touch_input::mouse_used("horizontal scroll");
+#endif
     virtualhid::hscroll(virtualhid::get_input_context(input), high_res_distance);
   }
 
@@ -1199,11 +1229,20 @@ namespace platf {
   }
 
   void touch_update(client_input_t *input, const touch_port_t &touch_port, const touch_input_t &touch) {
+#ifdef __APPLE__
+    // macOS has no touch input; touches become gestures of the mouse.
+    platf::touch_input::touch(touch_port, touch);
+#else
     virtualhid::touch_update(virtualhid::get_client_context(input), touch_port, touch);
+#endif
   }
 
   void pen_update(client_input_t *input, const touch_port_t &touch_port, const pen_input_t &pen) {
+#ifdef __APPLE__
+    platf::touch_input::pen(touch_port, pen);
+#else
     virtualhid::pen_update(virtualhid::get_client_context(input), touch_port, pen);
+#endif
   }
 
 #ifndef _WIN32

@@ -808,6 +808,7 @@ namespace config {
       true,  // macos_vd.make_primary
       false,  // macos_vd.disable_host
       true,  // macos_vd.stop_hotkey
+      true,  // macos_vd.block_local_input
       100,  // macos_vd.scale_percent
     },
 
@@ -837,6 +838,13 @@ namespace config {
     true,  // stream audio
     true,  // install_steam_drivers
     false,  // external_audio
+    0,  // delay_ms
+    true,  // client_mic
+    true,  // client_mic_default_input
+    true,  // client_mic_voice_isolation
+    4,  // client_mic_gain_db
+    true,  // client_mic_echo_cancellation
+    true,  // client_mic_eq
   };
 
   /**
@@ -1744,6 +1752,7 @@ namespace config {
     bool_f(vars, "macos_virtual_display_primary", video.macos_vd.make_primary);
     bool_f(vars, "macos_virtual_display_disable_host", video.macos_vd.disable_host);
     bool_f(vars, "macos_stop_stream_hotkey", video.macos_vd.stop_hotkey);
+    bool_f(vars, "macos_block_local_input", video.macos_vd.block_local_input);
     int_between_f(vars, "macos_virtual_display_scale", video.macos_vd.scale_percent, {50, 200});
 
     generic_f(vars, "dd_configuration_option", video.dd.configuration_option, dd::config_option_from_view);
@@ -1786,8 +1795,15 @@ namespace config {
     string_f(vars, "audio_sink", audio.sink);
     string_f(vars, "virtual_sink", audio.virtual_sink);
     bool_f(vars, "stream_audio", audio.stream);
+    int_between_f(vars, "audio_delay", audio.delay_ms, {0, MAX_AUDIO_DELAY_MS});
     bool_f(vars, "install_steam_audio_drivers", audio.install_steam_drivers);
     bool_f(vars, "external_audio", audio.external_audio);
+    bool_f(vars, "client_mic", audio.client_mic);
+    bool_f(vars, "client_mic_default_input", audio.client_mic_default_input);
+    bool_f(vars, "client_mic_voice_isolation", audio.client_mic_voice_isolation);
+    int_between_f(vars, "client_mic_gain", audio.client_mic_gain_db, {MIN_CLIENT_MIC_GAIN_DB, MAX_CLIENT_MIC_GAIN_DB});
+    bool_f(vars, "client_mic_echo_cancellation", audio.client_mic_echo_cancellation);
+    bool_f(vars, "client_mic_eq", audio.client_mic_eq);
 
     string_restricted_f(vars, "origin_web_ui_allowed", nvhttp.origin_web_ui_allowed, {"pc"sv, "lan"sv, "wan"sv});
 

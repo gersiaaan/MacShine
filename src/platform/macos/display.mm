@@ -181,6 +181,17 @@ namespace platf {
     }
 
     /**
+     * @brief Check whether a codec can encode a stream configuration from this display.
+     *
+     * @param name FFmpeg encoder name.
+     * @param config Stream configuration requested by the client.
+     * @return False for YUV 4:4:4 streams VideoToolbox would subsample, true otherwise.
+     */
+    bool is_codec_supported(std::string_view name, const ::video::config_t &config) override {
+      return config.chromaSamplingType != 1 || capture_color::yuv444_supported(name, config.dynamicRange);
+    }
+
+    /**
      * @brief Allocate an image buffer compatible with this display backend.
      *
      * @return Allocated img object, or null when unavailable.
@@ -200,10 +211,14 @@ namespace platf {
         av_capture.pixelFormat = kCVPixelFormatType_32BGRA;
 
         return std::make_unique<avcodec_encode_device_t>();
-      } else if (pix_fmt == pix_fmt_e::nv12 || pix_fmt == pix_fmt_e::p010) {
+      } else if (pix_fmt == pix_fmt_e::nv12 || pix_fmt == pix_fmt_e::p010 || pix_fmt == pix_fmt_e::nv24) {
         auto device = std::make_unique<nv12_zero_device>();
 
         device->init(av_capture, pix_fmt, capture_full_range, setResolution, setPixelFormat);
+        if (CGDisplayModeRef mode = CGDisplayCopyDisplayMode(display_id)) {
+          device->set_display_size(static_cast<int>(CGDisplayModeGetPixelWidth(mode)), static_cast<int>(CGDisplayModeGetPixelHeight(mode)));
+          CGDisplayModeRelease(mode);
+        }
 
         return device;
       } else {
@@ -453,7 +468,7 @@ namespace platf {
 
     if (hwdevice_type == platf::mem_type_e::videotoolbox) {
       [display->av_capture setFrameWidth:config.width frameHeight:config.height];
-      display->av_capture.pixelFormat = capture_color::pixel_format(colorspace.bit_depth == 10, colorspace.full_range);
+      display->av_capture.pixelFormat = capture_color::pixel_format(colorspace.bit_depth == 10, colorspace.full_range, config.chromaSamplingType == 1);
     }
 
     return display;

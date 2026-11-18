@@ -53,4 +53,22 @@ TEST(MacosFrameTimingTest, StaleFutureAndInvalidFramesUseDeliveryTime) {
   EXPECT_EQ(capture_timestamp(kCMTimeInvalid, now), now);
 }
 
+TEST(MacosFrameTimingTest, MinFrameIntervalIsNinetyPercentOfTheFrameTime) {
+  EXPECT_EQ(CMTimeCompare(macshine_capture_min_frame_interval(60), CMTimeMake(15, 1000)), 0);
+  EXPECT_EQ(CMTimeCompare(macshine_capture_min_frame_interval(120), CMTimeMake(75, 10000)), 0);
+}
+
+TEST(MacosFrameTimingTest, MinFrameIntervalStaysBelowTwoRefreshesOfTheDisplay) {
+  // The virtual display runs at twice the stream rate; two refreshes are one frame time.
+  for (const int rate : {30, 60, 120}) {
+    const CMTime two_refreshes {CMTimeMake(2, 2 * rate)};
+    EXPECT_LT(CMTimeCompare(macshine_capture_min_frame_interval(rate), two_refreshes), 0) << rate;
+  }
+}
+
+TEST(MacosFrameTimingTest, MinFrameIntervalDefaultsToSixtyFps) {
+  EXPECT_EQ(CMTimeCompare(macshine_capture_min_frame_interval(0), macshine_capture_min_frame_interval(60)), 0);
+  EXPECT_EQ(CMTimeCompare(macshine_capture_min_frame_interval(-5), macshine_capture_min_frame_interval(60)), 0);
+}
+
 #endif

@@ -10,7 +10,10 @@ extern "C" {
 
 // standard includes
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <bitset>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -68,6 +71,8 @@ namespace input {
   constexpr auto VKEY_MENU = 0x12;  ///< Windows virtual-key code for menu.
   constexpr auto VKEY_LMENU = 0xA4;  ///< Windows virtual-key code for lmenu.
   constexpr auto VKEY_RMENU = 0xA5;  ///< Windows virtual-key code for rmenu.
+  constexpr auto VKEY_LWIN = 0x5B;  ///< Windows virtual-key code for the left Windows (Command) key.
+  constexpr auto VKEY_RWIN = 0x5C;  ///< Windows virtual-key code for the right Windows (Command) key.
 
   /**
    * @brief Enumerates supported button state options.
@@ -124,16 +129,6 @@ namespace input {
   }
 
   /**
-   * @brief Extract the virtual-key code from a packed key-press identifier.
-   *
-   * @param kpid Key-press identifier containing the virtual-key code and flags.
-   * @return Virtual-key code stored in the high byte.
-   */
-  uint16_t vk_from_kpid(key_press_id_t kpid) {
-    return kpid >> 8;
-  }
-
-  /**
    * @brief Extract the modifier flags from a packed key-press identifier.
    *
    * @param kpid Key-press identifier containing the virtual-key code and flags.
@@ -171,6 +166,7 @@ namespace input {
   struct key_press_state_t {
     bool pressed = false;  ///< Whether the key is held.
     bool extended = false;  ///< Whether its press identified an extended key.
+    std::uint16_t host_key_code = 0;  ///< Host keycode the press emitted after keybinding remaps.
   };
 
   static std::unordered_map<key_press_id_t, key_press_state_t> key_press {};
@@ -319,6 +315,7 @@ namespace input {
 
     std::list<std::vector<uint8_t>> input_queue;  ///< Validated input packets waiting for processing.
     std::mutex input_queue_lock;  ///< Input queue lock.
+    std::atomic_bool apple_client {};  ///< Whether the client is a Mac, whose keyboard already sends Command as the Windows key.
     bool input_task_scheduled {};  ///< Whether one worker task owns packet dispatch for this stream; guarded by input_queue_lock.
 
     thread_pool_util::ThreadPool::task_id_t mouse_left_button_timeout {};  ///< Mouse left button timeout.
@@ -982,17 +979,45 @@ namespace input {
   }
 
   /**
+   * @brief Check whether a virtual-key code is a Control key.
+   *
+   * @param keycode Windows virtual-key code.
+   * @return True for the generic, left, and right Control keys.
+   */
+  bool is_control_key(short keycode) {
+    return keycode == VKEY_CONTROL || keycode == VKEY_LCONTROL || keycode == VKEY_RCONTROL;
+  }
+
+  /**
+   * @brief Check whether a virtual-key code is a Windows key.
+   *
+   * @param keycode Windows virtual-key code.
+   * @return True for the left and right Windows keys, which Mac clients send for Command.
+   */
+  bool is_windows_key(short keycode) {
+    return keycode == VKEY_LWIN || keycode == VKEY_RWIN;
+  }
+
+  /**
    * @brief Apply configured keybinding remaps to a platform keycode.
    *
    * @param keycode Platform keycode being translated or emitted.
+   * @param apple_client Whether the client is a Mac, which keeps its Control and Command keys as they are.
    * @return Remapped keycode when configured, otherwise the original keycode.
    */
-  short map_keycode(short keycode) {
-    if (auto it = config::input.keybindings.find(keycode); it != std::end(config::input.keybindings)) {
-      return it->second;
+  short map_keycode(short keycode, bool apple_client) {
+    auto it = config::input.keybindings.find(keycode);
+    if (it == std::end(config::input.keybindings)) {
+      return keycode;
     }
 
-    return keycode;
+    // A keybinding that swaps Control and Windows adapts a PC keyboard to a Mac host. A Mac
+    // client already sends its Command key as Windows, so the swap would turn it back around.
+    if (apple_client && ((is_control_key(keycode) && is_windows_key(it->second)) || (is_windows_key(keycode) && is_control_key(it->second)))) {
+      return keycode;
+    }
+
+    return it->second;
   }
 
   /**
@@ -1132,7 +1157,7 @@ namespace input {
   /**
    * @brief Send key and modifiers.
    *
-   * @param key_code Moonlight keyboard packet key code.
+   * @param key_code Host keycode to emit, after keybinding remaps.
    * @param release Whether the key or button event is a release.
    * @param flags Bit flags that modify the requested operation.
    * @param synthetic_modifiers Byte mask of modifiers to press around the key event.
@@ -1152,7 +1177,7 @@ namespace input {
       }
     }
 
-    emit_keyboard_update(map_keycode(key_code), release, flags, extended);
+    emit_keyboard_update(key_code, release, flags, extended);
 
     if (!release) {
       // Raise any synthetic modifier keys we pressed
@@ -1183,7 +1208,7 @@ namespace input {
       return;
     }
 
-    send_key_and_modifiers(key_code, false, flags, synthetic_modifiers, state.extended);
+    send_key_and_modifiers(state.host_key_code, false, flags, synthetic_modifiers, state.extended);
 
     key_press_repeat_id = task_pool.pushDelayed(repeat_key, config::input.key_repeat_period, key_code, flags, synthetic_modifiers).task_id;
   }
@@ -1235,6 +1260,7 @@ namespace input {
         }
 
         state.extended = (modifiers & MODIFIER_EXTENDED) != 0;
+        state.host_key_code = static_cast<std::uint16_t>(map_keycode(static_cast<short>(keyCode), input->apple_client));
 
         if (key_press_repeat_id) {
           task_pool.cancel(key_press_repeat_id);
@@ -1254,7 +1280,7 @@ namespace input {
 
     state.pressed = !release;
 
-    send_key_and_modifiers(keyCode, release, packet->flags, synthetic_modifiers, state.extended);
+    send_key_and_modifiers(state.host_key_code, release, packet->flags, synthetic_modifiers, state.extended);
 
     // Track the modifier state the client is holding, not the remapped host key.
     // This is compared against packet->modifiers above, which is client-side, so a
@@ -2342,7 +2368,7 @@ namespace input {
         // key_press is keyed on the client's unmapped virtual-key code, but the press was
         // emitted through map_keycode(). Release the host key that actually went down,
         // otherwise a remapped modifier stays latched after the client disconnects.
-        emit_keyboard_update(map_keycode(vk_from_kpid(key) & 0x00FF), true, flags_from_kpid(key), state.extended);
+        emit_keyboard_update(state.host_key_code, true, flags_from_kpid(key), state.extended);
         state.pressed = false;
       }
     }
@@ -2479,6 +2505,41 @@ namespace input {
         context.refresh_mouse();
       }
     });
+  }
+
+  bool is_apple_client_name(std::string_view client_name) {
+    // Words that name a Mac, after trailing model digits are dropped ("iMac24" -> "imac").
+    static constexpr std::array<std::string_view, 7> mac_words {"mac", "imac", "macmini", "macstudio", "macpro", "macos", "osx"};
+
+    std::string word;
+    const auto matches = [&word]() {
+      auto stem = std::string_view {word};
+      while (!stem.empty() && std::isdigit(static_cast<unsigned char>(stem.back()))) {
+        stem.remove_suffix(1);
+      }
+      return stem.starts_with("macbook") || std::ranges::find(mac_words, stem) != mac_words.end();
+    };
+
+    for (const char c : client_name) {
+      if (std::isalnum(static_cast<unsigned char>(c))) {
+        word.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        continue;
+      }
+      if (matches()) {
+        return true;
+      }
+      word.clear();
+    }
+
+    return matches();
+  }
+
+  void set_client_name(const std::shared_ptr<input_t> &input, std::string_view client_name) {
+    const bool apple_client = is_apple_client_name(client_name);
+    input->apple_client = apple_client;
+    if (apple_client) {
+      BOOST_LOG(info) << "Client ["sv << client_name << "] is a Mac: keeping its Control and Command keys as they are"sv;
+    }
   }
 
   /**

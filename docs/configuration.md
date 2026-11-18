@@ -913,6 +913,190 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
     </tr>
 </table>
 
+### audio_delay
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Delays the streamed audio by this many milliseconds, to line it up with video that reaches the client
+            later than the audio. Changes in the config file take effect within a second, also during a stream.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            0
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Range</td>
+        <td colspan="2">0-500</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            audio_delay = 60
+            @endcode</td>
+    </tr>
+</table>
+
+### client_mic
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Plays the microphone of clients that support it (such as Artemide Duo) into the "MacShine" input
+            device, so apps on the Mac can record it. Needs the MacShine audio driver, built and installed with
+            `scripts/macshine-mic/build-driver.sh` and `scripts/macshine-mic/install-driver.sh`.
+            @note{This option is only available on macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            client_mic = disabled
+            @endcode</td>
+    </tr>
+</table>
+
+### client_mic_default_input
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            While the client sends its microphone, makes "MacShine" the default input device of the Mac and
+            switches back to the previous input when the client stops, unless another input was picked meanwhile.
+            @note{This option is only available on macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            client_mic_default_input = disabled
+            @endcode</td>
+    </tr>
+</table>
+
+### client_mic_voice_isolation
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Filters background noise from the client's microphone with Apple's voice isolation (AUSoundIsolation,
+            the high quality model on macOS 15 and later), so only the voice reaches the "MacShine" input.
+            @note{This option is only available on macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            client_mic_voice_isolation = disabled
+            @endcode</td>
+    </tr>
+</table>
+
+### client_mic_gain
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Level change for the client's microphone in dB: negative is quieter, positive is louder. Peaks are
+            softened by a limiter so they never clip.
+            @note{This option is only available on macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            4
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Range</td>
+        <td colspan="2">-30 to 12</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            client_mic_gain = -6
+            @endcode</td>
+    </tr>
+</table>
+
+### client_mic_echo_cancellation
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Removes the stream's own sound that the client's microphone picks up from the client's speaker. An
+            adaptive filter learns the path from the streamed sound back into the microphone, including network
+            and playback delay, and subtracts it, so the other side of a call does not hear itself.
+            @note{This option is only available on macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            client_mic_echo_cancellation = disabled
+            @endcode</td>
+    </tr>
+</table>
+
+### client_mic_eq
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Shapes the client's microphone towards a warmer, smoother voice tone, close to an iPhone microphone
+            (more low end, softer presence and sibilance).
+            @note{This option is only available on macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            client_mic_eq = disabled
+            @endcode</td>
+    </tr>
+</table>
+
 ### install_steam_audio_drivers
 
 <table>
@@ -1294,6 +1478,32 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
         <td>Example</td>
         <td colspan="2">@code{}
             macos_stop_stream_hotkey = disabled
+            @endcode</td>
+    </tr>
+</table>
+
+### macos_block_local_input
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            While a client is connected, ignore input from the Mac's own keyboard and trackpad (and any other
+            local input device or app). Only Cmd and Esc still work, so Cmd+Esc can end the stream. The
+            client's input is not affected. Requires the Accessibility permission.
+            @note{This option only applies to macOS.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            macos_block_local_input = disabled
             @endcode</td>
     </tr>
 </table>

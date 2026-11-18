@@ -3,15 +3,20 @@
  * @brief Definitions for audio capture and encoding.
  */
 // standard includes
+#include <algorithm>
 #include <array>
+#include <filesystem>
+#include <system_error>
 #include <thread>
 
 // lib includes
 #include <opus/opus_multistream.h>
 
 // local includes
+#include "client_mic_aec.h"
 #include "audio.h"
 #include "config.h"
+#include "file_handler.h"
 #include "globals.h"
 #include "logging.h"
 #include "platform/common.h"
@@ -99,6 +104,86 @@ namespace audio {
       2048000,
     },
   }};
+
+  void delay_line_t::push(clock::time_point captured_at, std::vector<float> &&samples) {
+    queue.emplace_back(captured_at, std::move(samples));
+  }
+
+  std::vector<std::vector<float>> delay_line_t::pop_ready(clock::time_point now, std::chrono::milliseconds delay) {
+    std::vector<std::vector<float>> ready;
+    while (!queue.empty() && queue.front().first + delay <= now) {
+      ready.emplace_back(std::move(queue.front().second));
+      queue.pop_front();
+    }
+    return ready;
+  }
+
+  std::size_t delay_line_t::size() const {
+    return queue.size();
+  }
+
+  int read_audio_delay_ms(std::string_view file_content) {
+    auto vars = config::parse_config(file_content);
+    auto it = vars.find("audio_delay");
+    if (it == vars.end()) {
+      return 0;
+    }
+    try {
+      return std::clamp(std::stoi(it->second), 0, config::MAX_AUDIO_DELAY_MS);
+    } catch (...) {
+      return 0;
+    }
+  }
+
+  namespace {
+    /**
+     * @brief Follows the audio_delay setting in the config file so it can be tuned during a stream.
+     */
+    class live_audio_delay_t {
+    public:
+      /**
+       * @brief Start from the delay loaded at startup.
+       *
+       * @param config_file Path of the Sunshine config file to follow.
+       * @param initial_ms Delay loaded at startup.
+       */
+      live_audio_delay_t(std::string config_file, int initial_ms):
+          config_file {std::move(config_file)},
+          delay {initial_ms} {
+        std::error_code ec;
+        last_write = std::filesystem::last_write_time(this->config_file, ec);
+      }
+
+      /**
+       * @brief Current delay, re-reading the config file at most once a second when it changed.
+       *
+       * @param now Current time.
+       * @return Delay to apply.
+       */
+      std::chrono::milliseconds get(delay_line_t::clock::time_point now) {
+        if (now >= next_check && !config_file.empty()) {
+          next_check = now + std::chrono::seconds {1};
+          std::error_code ec;
+          auto write = std::filesystem::last_write_time(config_file, ec);
+          if (!ec && write != last_write) {
+            last_write = write;
+            auto updated = read_audio_delay_ms(file_handler::read_file(config_file.c_str()));
+            if (updated != delay.count()) {
+              BOOST_LOG(info) << "Audio delay changed to "sv << updated << "ms"sv;
+              delay = std::chrono::milliseconds {updated};
+            }
+          }
+        }
+        return delay;
+      }
+
+    private:
+      std::string config_file;  ///< Config file being followed.
+      std::chrono::milliseconds delay;  ///< Delay in effect.
+      std::filesystem::file_time_type last_write {};  ///< Modification time last read.
+      delay_line_t::clock::time_point next_check {};  ///< When the file is checked next.
+    };
+  }  // namespace
 
   /**
    * @brief Encode captured PCM samples into Opus packets on the audio worker thread.
@@ -246,6 +331,12 @@ namespace audio {
 
     int samples_per_frame = frame_size * stream.channelCount;
 
+    live_audio_delay_t audio_delay {config::sunshine.config_file, config::audio.delay_ms};
+    delay_line_t delay_line;
+    if (config::audio.delay_ms > 0) {
+      BOOST_LOG(info) << "Delaying audio by "sv << config::audio.delay_ms << "ms"sv;
+    }
+
     while (!shutdown_event->peek()) {
       std::vector<float> sample_buffer;
       sample_buffer.resize(samples_per_frame);
@@ -270,7 +361,20 @@ namespace audio {
           return;
       }
 
-      samples->raise(std::move(sample_buffer));
+      const auto now = delay_line_t::clock::now();
+      const auto delay = audio_delay.get(now);
+      if (delay.count() == 0 && delay_line.size() == 0) {
+        // What goes to the client is the echo canceller's reference for the client's microphone.
+        client_mic::stream_reference().push(sample_buffer.data(), sample_buffer.size(), stream.channelCount);
+        samples->raise(std::move(sample_buffer));
+        continue;
+      }
+
+      delay_line.push(now, std::move(sample_buffer));
+      for (auto &ready : delay_line.pop_ready(now, delay)) {
+        client_mic::stream_reference().push(ready.data(), ready.size(), stream.channelCount);
+        samples->raise(std::move(ready));
+      }
     }
   }
 

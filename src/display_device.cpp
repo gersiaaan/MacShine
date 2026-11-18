@@ -1040,11 +1040,21 @@ namespace display_device {
                                   {.m_sleep_durations = {DEFAULT_RETRY_INTERVAL}});
   }
 
-  void revert_configuration() {
+  void release_virtual_display() {
 #ifdef __APPLE__
-    // The session is over: remove the virtual display, macOS restores the previous main display.
+    platf::virtual_display::destroy_after(VIRTUAL_DISPLAY_LINGER);
+#endif
+  }
+
+  void remove_virtual_display() {
+#ifdef __APPLE__
     platf::virtual_display::destroy();
 #endif
+  }
+
+  void revert_configuration() {
+    // The session is over: the virtual display goes after a grace period, then macOS restores the previous main display.
+    release_virtual_display();
 
     std::lock_guard lock {DD_DATA.mutex};
     revert_configuration_unlocked(revert_option_e::try_indefinitely_with_delay);

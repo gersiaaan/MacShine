@@ -14,6 +14,7 @@
 // platform includes
 #ifdef __APPLE__
   #include "platform/macos/misc.h"
+  #include "platform/macos/single_instance.h"
   #include "platform/macos/stop_hotkey.h"
 
   #include <mach-o/dyld.h>
@@ -251,6 +252,26 @@ int main(int argc, char *argv[]) {
   if (config::parse(argc, argv)) {
     return 0;
   }
+
+#ifdef __APPLE__
+  // A second copy (e.g. a login item next to the LaunchAgent) cannot bind the ports but would still
+  // show its own tray icon. Check before logging starts, so it does not rotate the running log.
+  // Exit code 0 keeps launchd from restarting it.
+  platf::single_instance::lock_t instance_lock;
+  if (config::sunshine.cmd.name.empty()) {
+    const auto lock_path = platf::appdata() / "sunshine.lock";
+    switch (platf::single_instance::try_acquire(lock_path, instance_lock)) {
+      case platf::single_instance::acquire_result_e::already_running:
+        std::cerr << "Sunshine is already running; exiting" << std::endl;
+        return 0;
+      case platf::single_instance::acquire_result_e::error:
+        std::cerr << "Could not lock " << lock_path << ": " << std::strerror(errno) << "; continuing" << std::endl;
+        break;
+      case platf::single_instance::acquire_result_e::acquired:
+        break;
+    }
+  }
+#endif
 
   auto log_deinit_guard = logging::init(config::sunshine.min_log_level, config::sunshine.log_file);
   if (!log_deinit_guard) {
@@ -555,7 +576,9 @@ int main(int argc, char *argv[]) {
       if (proc::proc.running() > 0) {
         proc::proc.terminate();
       }
+      // Someone is at the Mac: give the host displays back now instead of after the grace period.
       display_device::revert_configuration();
+      display_device::remove_virtual_display();
     });
   }
 #endif

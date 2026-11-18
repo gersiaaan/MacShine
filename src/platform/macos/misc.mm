@@ -37,6 +37,7 @@
 #include <boost/asio/ip/host_name.hpp>
 
 // local includes
+#include "local_input_block.h"
 #include "misc.h"
 #include "src/boost_process_compat.h"
 #include "src/config.h"
@@ -514,12 +515,30 @@ namespace platf {
     // Unimplemented
   }
 
+  bool screen_locked() {
+    CFDictionaryRef session = CGSessionCopyCurrentDictionary();
+    if (!session) {
+      // No GUI session at all (login window before anyone signed in): treat as locked.
+      return true;
+    }
+    bool locked = false;
+    const auto value = CFDictionaryGetValue(session, CFSTR("CGSSessionScreenIsLocked"));
+    if (value && CFGetTypeID(value) == CFBooleanGetTypeID()) {
+      locked = CFBooleanGetValue(static_cast<CFBooleanRef>(value));
+    }
+    CFRelease(session);
+    return locked;
+  }
+
   void streaming_will_start() {
-    // Nothing to do
+    // Someone streams to this Mac: its own keyboard and trackpad must not get in the way.
+    if (config::video.macos_vd.block_local_input) {
+      local_input_block::start();
+    }
   }
 
   void streaming_will_stop() {
-    // Nothing to do
+    local_input_block::stop();
   }
 
   static pid_t g_restart_child_pid = 0;  ///< PID of the restarted child process for signal forwarding.

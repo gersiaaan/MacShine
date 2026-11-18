@@ -439,6 +439,15 @@ namespace {
       return *context_->keyboard;
     }
 
+    /**
+     * @brief Access the stream input state under test.
+     *
+     * @return Stream input state.
+     */
+    std::shared_ptr<input::input_t> &stream() {
+      return stream_;
+    }
+
   private:
     std::shared_ptr<input::input_t> stream_;  ///< Stream input state under test.
     std::vector<input::testing::keyboard_event_t> events_;  ///< Keyboard output recorded for the current test.
@@ -979,4 +988,70 @@ TEST_F(KeyboardPassthroughTest, ReleasesTheRemappedRightAltForKeyRightaltToKeyWi
   input::testing::release_held_keys();
 
   EXPECT_EQ(taken(), (std::vector<std::string> {released(VKEY_LWIN)}));
+}
+
+TEST(AppleClientNameTest, RecognizesNamesThatIdentifyAMac) {
+  for (const auto *name : {"MacBook Air M1 - Moonlight", "MacBookPro_14", "iMac24", "Mac mini", "Alex's Mac", "mac-studio", "MacOS client"}) {
+    SCOPED_TRACE(name);
+    EXPECT_TRUE(input::is_apple_client_name(name));
+  }
+}
+
+TEST(AppleClientNameTest, IgnoresNamesThatOnlyStartWithMac) {
+  for (const auto *name : {"", "iPad Pro", "Gaming PC", "Machine", "Macro Pad", "Windows Laptop"}) {
+    SCOPED_TRACE(name);
+    EXPECT_FALSE(input::is_apple_client_name(name));
+  }
+}
+
+TEST_F(KeyboardPassthroughTest, KeepsControlAndCommandAsTheyAreForAMacClient) {
+  // The PC-keyboard swap from the configuration of the MacBook host this was reported on.
+  config::input.keybindings = {
+    {VKEY_LCONTROL, VKEY_LWIN},
+    {VKEY_RCONTROL, VKEY_RWIN},
+    {VKEY_LWIN, VKEY_LCONTROL},
+    {VKEY_RWIN, VKEY_RCONTROL},
+    {VKEY_CONTROL, VKEY_LCONTROL},
+    {VKEY_LMENU, VKEY_LSHIFT},
+  };
+  input::set_client_name(stream(), "MacBook Air M1 - Moonlight");
+
+  for (const auto key : {VKEY_LCONTROL, VKEY_RCONTROL, VKEY_LWIN, VKEY_RWIN}) {
+    SCOPED_TRACE(hex(key));
+    press(key);
+    release(key);
+    EXPECT_EQ(taken(), (std::vector<std::string> {pressed(key), released(key)}));
+  }
+
+  // Remaps that do not swap Control and Windows still apply.
+  press(VKEY_CONTROL);
+  press(VKEY_LMENU);
+  release(VKEY_LMENU);
+  release(VKEY_CONTROL);
+  EXPECT_EQ(taken(), (std::vector<std::string> {pressed(VKEY_LCONTROL), pressed(VKEY_LSHIFT), released(VKEY_LSHIFT), released(VKEY_LCONTROL)}));
+}
+
+TEST_F(KeyboardPassthroughTest, SwapsControlAndCommandForOtherClients) {
+  config::input.keybindings = {{VKEY_LCONTROL, VKEY_LWIN}, {VKEY_LWIN, VKEY_LCONTROL}};
+  input::set_client_name(stream(), "iPad Pro");
+
+  press(VKEY_LCONTROL);
+  release(VKEY_LCONTROL);
+  press(VKEY_LWIN);
+  release(VKEY_LWIN);
+  EXPECT_EQ(taken(), (std::vector<std::string> {pressed(VKEY_LWIN), released(VKEY_LWIN), pressed(VKEY_LCONTROL), released(VKEY_LCONTROL)}));
+}
+
+TEST_F(KeyboardPassthroughTest, ReleasesAndRepeatsTheKeyThatWentDownWhenTheClientChanges) {
+  config::input.key_repeat_period = 1h;
+  config::input.keybindings = {{VKEY_LCONTROL, VKEY_LWIN}};
+
+  press(VKEY_LCONTROL);
+  EXPECT_EQ(taken(), (std::vector<std::string> {pressed(VKEY_LWIN)}));
+
+  // A resumed stream from a Mac must not change the identity of a key that is already down.
+  input::set_client_name(stream(), "MacBook Air");
+  input::repeat_key(VKEY_LCONTROL, 0, std::byte {0});
+  release(VKEY_LCONTROL);
+  EXPECT_EQ(taken(), (std::vector<std::string> {pressed(VKEY_LWIN), released(VKEY_LWIN)}));
 }

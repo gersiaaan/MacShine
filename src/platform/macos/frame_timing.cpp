@@ -50,3 +50,8 @@ namespace platf::frame_timing {
   }
 
 }  // namespace platf::frame_timing
+
+CMTime macshine_capture_min_frame_interval(int frame_rate) {
+  const int rate {frame_rate > 0 ? frame_rate : 60};
+  return CMTimeMake(9, 10 * rate);
+}

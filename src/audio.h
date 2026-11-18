@@ -11,6 +11,10 @@
 
 #include <array>
 #include <bitset>
+#include <chrono>
+#include <deque>
+#include <string_view>
+#include <vector>
 
 namespace stream {
   struct session_t;
@@ -144,4 +148,49 @@ namespace audio {
    * @param ctx Native context object used by the operation or callback.
    */
   bool is_audio_ctx_sink_available(const audio_ctx_t &ctx);
+
+  /**
+   * @brief Holds captured sample buffers back for a configurable time before they are encoded.
+   *
+   * Used to delay the audio of a stream so it lines up with video that reaches the client later.
+   */
+  class delay_line_t {
+  public:
+    using clock = std::chrono::steady_clock;  ///< Clock used for capture timestamps.
+
+    /**
+     * @brief Queue a captured buffer.
+     *
+     * @param captured_at When the buffer was captured.
+     * @param samples Captured interleaved samples.
+     */
+    void push(clock::time_point captured_at, std::vector<float> &&samples);
+
+    /**
+     * @brief Remove every buffer that has been held for at least @p delay.
+     *
+     * @param now Current time.
+     * @param delay How long each buffer is held.
+     * @return Released buffers, oldest first.
+     */
+    std::vector<std::vector<float>> pop_ready(clock::time_point now, std::chrono::milliseconds delay);
+
+    /**
+     * @brief Number of buffers currently held back.
+     *
+     * @return Buffer count.
+     */
+    std::size_t size() const;
+
+  private:
+    std::deque<std::pair<clock::time_point, std::vector<float>>> queue;  ///< Held buffers with their capture time.
+  };
+
+  /**
+   * @brief Read the audio_delay setting from the content of a Sunshine config file.
+   *
+   * @param file_content Content of the config file.
+   * @return Delay in milliseconds clamped to 0..config::MAX_AUDIO_DELAY_MS, 0 when unset or invalid.
+   */
+  int read_audio_delay_ms(std::string_view file_content);
 }  // namespace audio

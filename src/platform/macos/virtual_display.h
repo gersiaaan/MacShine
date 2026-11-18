@@ -6,6 +6,7 @@
 
 // standard includes
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -65,8 +66,27 @@ namespace platf::virtual_display {
 
   /**
    * @brief Remove the virtual display if one exists. Safe to call at any time.
+   *
+   * Also cancels a removal scheduled with destroy_after().
    */
   void destroy();
+
+  /**
+   * @brief Remove the virtual display after a delay, unless a new session claims it first.
+   *
+   * A client that reconnects or relaunches the app within the delay keeps its display, so the
+   * desktop keeps its size and windows stay where they are. create() and destroy() cancel the
+   * pending removal, and a later call replaces its deadline. Safe to call when no display exists.
+   *
+   * @param delay Time to wait before removing the display.
+   */
+  void destroy_after(std::chrono::milliseconds delay);
+
+  /**
+   * @brief Check whether a removal scheduled with destroy_after() is still pending.
+   * @return True while the display is waiting to be removed.
+   */
+  bool removal_pending();
 
   /**
    * @brief Get the active virtual display.

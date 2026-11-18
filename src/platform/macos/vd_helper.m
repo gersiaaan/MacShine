@@ -687,8 +687,16 @@ static void disable_other_displays(void) {
 
   if (display_enabled_switch()) {
     // Record first: if the helper dies right after the switch, --restore still knows what to undo.
-    memcpy(g_disabled_displays, targets, sizeof(CGDirectDisplayID) * target_count);
-    g_disabled_count = target_count;
+    // Keep displays recorded by an earlier pass; this runs again for displays that appear later.
+    for (uint32_t i = 0; i < target_count; ++i) {
+      BOOL known = NO;
+      for (uint32_t j = 0; j < g_disabled_count; ++j) {
+        known = known || g_disabled_displays[j] == targets[i];
+      }
+      if (!known && g_disabled_count < 16) {
+        g_disabled_displays[g_disabled_count++] = targets[i];
+      }
+    }
     save_disabled_displays();
 
     // WindowServer applies the change asynchronously and sometimes ignores the first request.
@@ -717,6 +725,39 @@ static void disable_other_displays(void) {
     blacken_display(g_dimmed_display);
   }
   log_active_displays();
+}
+
+/** When turning host displays that appeared during the stream off was last attempted. */
+static CFAbsoluteTime g_last_late_disable;
+
+/**
+ * Keep the host displays dark for the whole stream. A display that becomes active after the stream
+ * started (the lid opened, a display woke up or was plugged in) would otherwise show the desktop
+ * until the stream ends: darken it at once and try to turn it off, at most every few seconds.
+ * Displays that mirror the virtual display (the fallback when macOS keeps one on) are only darkened.
+ */
+static void keep_host_displays_dark(void) {
+  if (!g_disable_others || !g_ready_sent) {
+    return;
+  }
+  CGDirectDisplayID targets[16];
+  const uint32_t count = other_active_displays(targets);
+  if (count == 0) {
+    return;
+  }
+  dim_builtin_display(targets, count);
+  BOOL needs_disable = NO;
+  for (uint32_t i = 0; i < count; ++i) {
+    blacken_display(targets[i]);
+    needs_disable = needs_disable || CGDisplayMirrorsDisplay(targets[i]) != g_display.displayID;
+  }
+  const CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+  if (needs_disable && now - g_last_late_disable >= 5) {
+    g_last_late_disable = now;
+    log_line(@"%u host display(s) became active during the stream, turning them off", count);
+    g_others_disabled = NO;
+    disable_other_displays();
+  }
 }
 
 /** Turn back on the displays this helper turned off. Registered with atexit. */
@@ -1050,6 +1091,14 @@ int main(int argc, const char *argv[]) {
       }
     });
     dispatch_resume(timer);
+
+    // Host displays can light up at any time during the stream; catch them quicker than the slow tick.
+    dispatch_source_t dark_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    dispatch_source_set_timer(dark_timer, dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC), 500 * NSEC_PER_MSEC, 100 * NSEC_PER_MSEC);
+    dispatch_source_set_event_handler(dark_timer, ^{
+      keep_host_displays_dark();
+    });
+    dispatch_resume(dark_timer);
 
     dispatch_main();
   }

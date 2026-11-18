@@ -4,12 +4,13 @@
  */
 #pragma once
 
-// standard includes
-#include <chrono>
-#include <optional>
-
 // platform includes
 #include <CoreMedia/CoreMedia.h>
+
+#ifdef __cplusplus
+  // standard includes
+  #include <chrono>
+  #include <optional>
 
 namespace platf::frame_timing {
 
@@ -39,3 +40,23 @@ namespace platf::frame_timing {
   std::chrono::steady_clock::time_point capture_timestamp(CMTime presentation_time, std::chrono::steady_clock::time_point now);
 
 }  // namespace platf::frame_timing
+
+extern "C" {
+#endif
+
+/**
+ * @brief Minimum time between captured frames for a stream frame rate, for the Objective-C capture.
+ *
+ * The interval is 90% of the frame time. The virtual display refreshes at twice the stream rate, so
+ * a new frame comes exactly two refreshes after the last one. With the full frame time as the
+ * minimum, ScreenCaptureKit rejects such a frame when it arrives a hair early and takes the next
+ * refresh instead, which shows as uneven motion (frames 25 ms and then 8 ms apart at 60 fps).
+ *
+ * @param frame_rate Stream frame rate; 60 is used when it is not positive.
+ * @return Minimum frame interval.
+ */
+CMTime macshine_capture_min_frame_interval(int frame_rate);
+
+#ifdef __cplusplus
+}
+#endif

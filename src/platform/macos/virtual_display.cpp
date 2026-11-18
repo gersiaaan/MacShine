@@ -15,6 +15,8 @@
 #include <climits>
 #include <condition_variable>
 #include <csignal>
+#include <optional>
+#include <stop_token>
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
@@ -42,6 +44,8 @@ namespace platf::virtual_display {
   namespace {
     constexpr auto HELPER_NAME {"sunshine_vd_helper"};
     constexpr auto READY_TIMEOUT {10s};
+    constexpr int CREATE_ATTEMPTS {3};  ///< Helper starts before giving up; macOS may refuse a display briefly after removing one.
+    constexpr auto CREATE_RETRY_DELAY {1s};
 
     struct helper_state_t {
       pid_t pid {-1};
@@ -60,6 +64,12 @@ namespace platf::virtual_display {
 
     std::mutex g_mutex;
     std::unique_ptr<helper_state_t> g_helper;
+
+    // Delayed removal, guarded by g_mutex. Declared after g_mutex so the worker is joined before it is destroyed.
+    std::condition_variable_any g_removal_cv;
+    std::optional<std::chrono::steady_clock::time_point> g_removal_deadline;
+    bool g_removal_worker_running {false};
+    std::jthread g_removal_worker;
 
     std::filesystem::path helper_path() {
       std::array<char, PATH_MAX> executable {};
@@ -175,6 +185,115 @@ namespace platf::virtual_display {
         BOOST_LOG(info) << "Removed virtual display "sv << helper.display_id;
       }
       g_helper.reset();
+    }
+
+    void cancel_removal_unlocked() {
+      g_removal_deadline.reset();
+      g_removal_cv.notify_all();
+    }
+
+    void removal_worker(const std::stop_token &stop) {
+      std::unique_lock lock {g_mutex};
+      while (g_removal_deadline && !stop.stop_requested()) {
+        const auto deadline {*g_removal_deadline};
+        const bool rescheduled {g_removal_cv.wait_until(lock, stop, deadline, [deadline] {
+          return !g_removal_deadline || *g_removal_deadline != deadline;
+        })};
+        if (rescheduled || stop.stop_requested()) {
+          continue;
+        }
+        g_removal_deadline.reset();
+        if (g_helper) {
+          BOOST_LOG(info) << "No client came back, removing the virtual display"sv;
+          stop_helper_unlocked();
+        }
+      }
+      g_removal_worker_running = false;
+    }
+
+    /**
+     * @brief Start a helper for the request and wait until its display is ready.
+     * @param path Helper executable.
+     * @param request Display parameters.
+     * @param gave_up Set to true when the helper exited on its own instead of timing out, which is worth retrying.
+     * @return The display ID, or an empty string on failure.
+     */
+    std::string start_helper_unlocked(const std::filesystem::path &path, const request_t &request, bool &gave_up) {
+      gave_up = false;
+      std::array<int, 2> in_pipe {-1, -1};
+      std::array<int, 2> out_pipe {-1, -1};
+      if (pipe(in_pipe.data()) != 0 || pipe(out_pipe.data()) != 0) {
+        BOOST_LOG(error) << "Failed to create pipes for the virtual display helper: "sv << errno;
+        for (const int fd : {in_pipe[0], in_pipe[1], out_pipe[0], out_pipe[1]}) {
+          if (fd >= 0) {
+            close(fd);
+          }
+        }
+        return {};
+      }
+
+      const auto args {helper_arguments(path.string(), request)};
+      std::vector<char *> argv;
+      argv.reserve(args.size() + 1);
+      for (const auto &arg : args) {
+        argv.push_back(const_cast<char *>(arg.c_str()));
+      }
+      argv.push_back(nullptr);
+
+      posix_spawn_file_actions_t actions;
+      posix_spawn_file_actions_init(&actions);
+      posix_spawn_file_actions_adddup2(&actions, in_pipe[0], STDIN_FILENO);
+      posix_spawn_file_actions_adddup2(&actions, out_pipe[1], STDOUT_FILENO);
+      posix_spawn_file_actions_adddup2(&actions, out_pipe[1], STDERR_FILENO);
+
+      posix_spawnattr_t attributes;
+      posix_spawnattr_init(&attributes);
+      // Do not leak Sunshine's sockets (ASIO does not use O_CLOEXEC) into the helper.
+      posix_spawnattr_setflags(&attributes, POSIX_SPAWN_CLOEXEC_DEFAULT);
+
+      pid_t pid {-1};
+      const int spawn_result {posix_spawn(&pid, path.c_str(), &actions, &attributes, argv.data(), environ)};
+      posix_spawn_file_actions_destroy(&actions);
+      posix_spawnattr_destroy(&attributes);
+      close(in_pipe[0]);
+      close(out_pipe[1]);
+
+      if (spawn_result != 0) {
+        BOOST_LOG(error) << "Failed to start the virtual display helper: "sv << spawn_result;
+        close(in_pipe[1]);
+        close(out_pipe[0]);
+        return {};
+      }
+      fcntl(in_pipe[1], F_SETFD, FD_CLOEXEC);
+      // Size reports must never block Sunshine or kill it with SIGPIPE when the helper is gone.
+      fcntl(in_pipe[1], F_SETFL, fcntl(in_pipe[1], F_GETFL) | O_NONBLOCK);
+      fcntl(in_pipe[1], F_SETNOSIGPIPE, 1);
+      fcntl(out_pipe[0], F_SETFD, FD_CLOEXEC);
+
+      g_helper = std::make_unique<helper_state_t>();
+      g_helper->request = request;
+      g_helper->pid = pid;
+      g_helper->stdin_fd = in_pipe[1];
+      g_helper->reader = std::thread {read_helper_output, g_helper.get(), out_pipe[0]};
+
+      std::string display_id;
+      {
+        std::unique_lock ready_lock {g_helper->ready_mutex};
+        g_helper->ready_cv.wait_for(ready_lock, READY_TIMEOUT, [] {
+          return g_helper->ready || g_helper->exited;
+        });
+        if (g_helper->ready) {
+          display_id = g_helper->ready_display_id;
+        }
+        gave_up = display_id.empty() && g_helper->exited;
+      }
+
+      if (display_id.empty()) {
+        stop_helper_unlocked();
+        return {};
+      }
+      g_helper->display_id = display_id;
+      return display_id;
     }
   }  // namespace
 
@@ -316,6 +435,7 @@ namespace platf::virtual_display {
     }
 
     std::lock_guard lock {g_mutex};
+    cancel_removal_unlocked();
 
     // A client resuming with the same settings keeps its display, so windows stay where they are.
     if (g_helper && !g_helper->display_id.empty()) {
@@ -338,90 +458,50 @@ namespace platf::virtual_display {
       return std::nullopt;
     }
 
-    std::array<int, 2> in_pipe {-1, -1};
-    std::array<int, 2> out_pipe {-1, -1};
-    if (pipe(in_pipe.data()) != 0 || pipe(out_pipe.data()) != 0) {
-      BOOST_LOG(error) << "Failed to create pipes for the virtual display helper: "sv << errno;
-      for (const int fd : {in_pipe[0], in_pipe[1], out_pipe[0], out_pipe[1]}) {
-        if (fd >= 0) {
-          close(fd);
-        }
-      }
-      return std::nullopt;
-    }
-
-    const auto args {helper_arguments(path.string(), request)};
-    std::vector<char *> argv;
-    argv.reserve(args.size() + 1);
-    for (const auto &arg : args) {
-      argv.push_back(const_cast<char *>(arg.c_str()));
-    }
-    argv.push_back(nullptr);
-
-    posix_spawn_file_actions_t actions;
-    posix_spawn_file_actions_init(&actions);
-    posix_spawn_file_actions_adddup2(&actions, in_pipe[0], STDIN_FILENO);
-    posix_spawn_file_actions_adddup2(&actions, out_pipe[1], STDOUT_FILENO);
-    posix_spawn_file_actions_adddup2(&actions, out_pipe[1], STDERR_FILENO);
-
-    posix_spawnattr_t attributes;
-    posix_spawnattr_init(&attributes);
-    // Do not leak Sunshine's sockets (ASIO does not use O_CLOEXEC) into the helper.
-    posix_spawnattr_setflags(&attributes, POSIX_SPAWN_CLOEXEC_DEFAULT);
-
-    pid_t pid {-1};
-    const int spawn_result {posix_spawn(&pid, path.c_str(), &actions, &attributes, argv.data(), environ)};
-    posix_spawn_file_actions_destroy(&actions);
-    posix_spawnattr_destroy(&attributes);
-    close(in_pipe[0]);
-    close(out_pipe[1]);
-
-    if (spawn_result != 0) {
-      BOOST_LOG(error) << "Failed to start the virtual display helper: "sv << spawn_result;
-      close(in_pipe[1]);
-      close(out_pipe[0]);
-      return std::nullopt;
-    }
-    fcntl(in_pipe[1], F_SETFD, FD_CLOEXEC);
-    // Size reports must never block Sunshine or kill it with SIGPIPE when the helper is gone.
-    fcntl(in_pipe[1], F_SETFL, fcntl(in_pipe[1], F_GETFL) | O_NONBLOCK);
-    fcntl(in_pipe[1], F_SETNOSIGPIPE, 1);
-    fcntl(out_pipe[0], F_SETFD, FD_CLOEXEC);
-
-    g_helper = std::make_unique<helper_state_t>();
-    g_helper->request = request;
-    g_helper->pid = pid;
-    g_helper->stdin_fd = in_pipe[1];
-    g_helper->reader = std::thread {read_helper_output, g_helper.get(), out_pipe[0]};
-
     BOOST_LOG(info) << "Creating virtual display "sv << request.width << 'x' << request.height << '@' << request.fps
                     << " (display "sv << display_refresh_rate(request.fps) << " Hz)"sv
                     << (request.hidpi ? " (HiDPI)"sv : ""sv) << " at "sv << request.scale_percent << "% for ["sv << request.name << ']';
 
-    std::string display_id;
-    {
-      std::unique_lock ready_lock {g_helper->ready_mutex};
-      g_helper->ready_cv.wait_for(ready_lock, READY_TIMEOUT, [] {
-        return g_helper->ready || g_helper->exited;
-      });
-      if (g_helper->ready) {
-        display_id = g_helper->ready_display_id;
+    for (int attempt = 1; attempt <= CREATE_ATTEMPTS; ++attempt) {
+      bool gave_up {false};
+      if (auto display_id {start_helper_unlocked(path, request, gave_up)}; !display_id.empty()) {
+        return display_id;
       }
+      // A helper that hung until the timeout will not do better next time.
+      if (gave_up && attempt < CREATE_ATTEMPTS) {
+        BOOST_LOG(warning) << "Virtual display helper did not become ready, retrying ("sv << attempt << '/' << CREATE_ATTEMPTS << ')';
+        std::this_thread::sleep_for(CREATE_RETRY_DELAY);
+        continue;
+      }
+      break;
     }
 
-    if (display_id.empty()) {
-      BOOST_LOG(error) << "Virtual display helper did not become ready"sv;
-      stop_helper_unlocked();
-      return std::nullopt;
-    }
-
-    g_helper->display_id = display_id;
-    return display_id;
+    BOOST_LOG(error) << "Virtual display helper did not become ready"sv;
+    return std::nullopt;
   }
 
   void destroy() {
     std::lock_guard lock {g_mutex};
+    cancel_removal_unlocked();
     stop_helper_unlocked();
+  }
+
+  void destroy_after(std::chrono::milliseconds delay) {
+    std::lock_guard lock {g_mutex};
+    g_removal_deadline = std::chrono::steady_clock::now() + delay;
+    if (!g_removal_worker_running) {
+      if (g_removal_worker.joinable()) {
+        g_removal_worker.join();  // finished; it released g_mutex before returning
+      }
+      g_removal_worker_running = true;
+      g_removal_worker = std::jthread {removal_worker};
+    }
+    g_removal_cv.notify_all();
+  }
+
+  bool removal_pending() {
+    std::lock_guard lock {g_mutex};
+    return g_removal_deadline.has_value();
   }
 
   std::string active_display_id() {

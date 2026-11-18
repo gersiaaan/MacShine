@@ -222,16 +222,17 @@ namespace nvhttp {
    * A fresh `getservercert` request means the client abandoned its previous handshake and
    * started over: the phase machine never accepts `getservercert` twice for one session, so
    * the old handshake cannot resume. Evicting it lets the retry proceed instead of failing
-   * with 409 until the session expires. Sessions still waiting for operator PIN approval
-   * (`last_phase == NONE`) are left untouched, so a pending approval cannot be displaced
-   * by a stray `getservercert`. Eviction completes the old session as failed, waking any
-   * PIN submitter waiting on it, and orphans no live HTTP response: the response is
-   * consumed when PIN approval advances the session past the certificate phase.
+   * with 409 until the session expires. A session still waiting for operator PIN approval
+   * (`last_phase == NONE`) is replaced only when the retry comes from the same address, which
+   * happens when a client cancels its pairing dialog and pairs again; a request from another
+   * device cannot displace a pending approval. Eviction completes the old session as failed,
+   * waking any PIN submitter waiting on it, and answers its held HTTP response, if any, with 409.
    *
    * @param unique_id Client-provided pairing-session identifier.
-   * @return `true` when an in-progress session was evicted.
+   * @param address Normalized address of the retrying client; empty never replaces a pending approval.
+   * @return `true` when a session was evicted.
    */
-  bool evict_abandoned_pair_session(const std::string &unique_id);
+  bool evict_abandoned_pair_session(const std::string &unique_id, std::string_view address = {});
 
   /**
    * @brief Remove pairing sessions whose completion deadline has passed.

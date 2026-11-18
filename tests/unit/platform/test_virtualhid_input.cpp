@@ -26,6 +26,9 @@
 #if defined(_WIN32) || defined(__APPLE__)
   #include <libvirtualhid/license.hpp>
 #endif
+#ifdef __APPLE__
+  #include "src/platform/macos/touch_input.h"
+#endif
 
 using namespace std::chrono_literals;
 using namespace std::literals;
@@ -1042,6 +1045,10 @@ TEST_F(VirtualHidDeviceTest, PlatformWrappersForwardToVirtualHidContext) {
   const platf::touch_port_t viewport {0, 0, 1280, 720, 1280, 720};
   platf::move_mouse(platform_input, 2, 3);
   EXPECT_EQ(platform_context.mouse->last_submitted_event().kind, lvh::MouseEventKind::relative_motion);
+#ifdef __APPLE__
+  // Touch tests run before; absolute moves right after a touch are dropped.
+  platf::touch_input::forget_touches();
+#endif
   platf::abs_mouse(platform_input, viewport, 40.0F, 50.0F);
   EXPECT_EQ(platform_context.mouse->last_submitted_event().kind, lvh::MouseEventKind::absolute_motion);
   platf::button_mouse(platform_input, BUTTON_LEFT, false);
@@ -1119,7 +1126,13 @@ TEST_F(VirtualHidDeviceTest, PlatformWrappersForwardToVirtualHidContext) {
   ASSERT_NE(platform_client_context.touch, nullptr);
   ASSERT_NE(platform_client_context.pen, nullptr);
   platf::touch_update(platform_client.get(), viewport, {LI_TOUCH_EVENT_DOWN, 0, 1, 0.25F, 0.5F, 1.0F, 2.0F, 1.0F});
-  EXPECT_EQ(platform_client_context.touch->last_submitted_contact().id, 1);
   platf::pen_update(platform_client.get(), viewport, {LI_TOUCH_EVENT_HOVER, LI_TOOL_TYPE_PEN, 0, LI_TILT_UNKNOWN, LI_ROT_UNKNOWN, 0.25F, 0.5F, 0.5F, 0.0F, 0.0F});
+#ifdef __APPLE__
+  // macOS turns touches and pens into mouse gestures instead (see src/platform/macos/touch_input.h).
+  EXPECT_EQ(platform_client_context.touch->submit_count(), 0U);
+  EXPECT_EQ(platform_client_context.pen->submit_count(), 0U);
+#else
+  EXPECT_EQ(platform_client_context.touch->last_submitted_contact().id, 1);
   EXPECT_EQ(platform_client_context.pen->last_submitted_tool().tool, lvh::PenToolType::pen);
+#endif
 }

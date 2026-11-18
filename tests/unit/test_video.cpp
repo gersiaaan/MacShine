@@ -187,6 +187,34 @@ INSTANTIATE_TEST_SUITE_P(
 );
 
 /**
+ * @brief Parameterized coverage for effective HEVC profile selection.
+ */
+struct HevcProfileTest: testing::TestWithParam<std::tuple<std::string_view, int, int, int>> {};
+
+TEST_P(HevcProfileTest, SelectProfile) {
+  const auto &[encoder_name, dynamic_range, chroma_sampling_type, expected_profile] = GetParam();
+  video::config_t config {};
+  config.dynamicRange = dynamic_range;
+  config.chromaSamplingType = chroma_sampling_type;
+
+  EXPECT_EQ(expected_profile, video::select_hevc_profile(encoder_name, config));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  HevcProfileTests,
+  HevcProfileTest,
+  testing::Values(
+    std::make_tuple("hevc_nvenc"sv, 0, 0, AV_PROFILE_HEVC_MAIN),
+    std::make_tuple("hevc_nvenc"sv, 1, 0, AV_PROFILE_HEVC_MAIN_10),
+    std::make_tuple("hevc_nvenc"sv, 0, 1, AV_PROFILE_HEVC_REXT),
+    std::make_tuple("hevc_nvenc"sv, 1, 1, AV_PROFILE_HEVC_REXT),
+    std::make_tuple("hevc_videotoolbox"sv, 0, 0, AV_PROFILE_HEVC_MAIN),
+    std::make_tuple("hevc_videotoolbox"sv, 1, 0, AV_PROFILE_HEVC_MAIN_10),
+    std::make_tuple("hevc_videotoolbox"sv, 0, 1, AV_PROFILE_UNKNOWN)
+  )
+);
+
+/**
  * @brief Parameterized coverage for resolving requested dynamic range against encoder capabilities.
  */
 struct DynamicRangeTest: testing::TestWithParam<std::tuple<int, int, int, bool, bool, int>> {};

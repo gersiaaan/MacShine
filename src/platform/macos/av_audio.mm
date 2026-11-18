@@ -72,6 +72,28 @@ namespace platf {
     return started;
   }
 
+  UInt32 trimAudioBacklog(TPCircularBuffer *buffer, UInt32 maxBytes, UInt32 keepBytes, UInt32 frameBytes) {
+    uint32_t available = 0;
+    TPCircularBufferTail(buffer, &available);
+    if (available <= maxBytes || frameBytes == 0) {
+      return 0;
+    }
+
+    const UInt32 keep = std::min(keepBytes, maxBytes);
+    UInt32 drop = available - keep;
+    drop -= drop % frameBytes;
+    TPCircularBufferConsume(buffer, drop);
+    return drop;
+  }
+
+  bool produceAudioBytes(AVAudio *avAudio, const void *bytes, UInt32 length) {
+    if (TPCircularBufferProduceBytes(&avAudio->audioSampleBuffer, bytes, length)) {
+      return true;
+    }
+    avAudio->overflowedBytes.fetch_add(length, std::memory_order_relaxed);
+    return false;
+  }
+
   /**
    * @brief Real-time AudioConverter input callback for format conversion.
    * Provides audio data to AudioConverter during format conversion process using pure C++ for optimal performance.
@@ -172,16 +194,23 @@ namespace platf {
           if (converterStatus == noErr && outputFrameCount > 0) {
             // AudioConverter did all the work: sample rate + channels + optimal frame count
             UInt32 actualOutputBytes = outputFrameCount * clientChannels * sizeof(float);
-            TPCircularBufferProduceBytes(&avAudio->audioSampleBuffer, procData->conversionBuffer, actualOutputBytes);
+            produceAudioBytes(avAudio, procData->conversionBuffer, actualOutputBytes);
             didWriteData = true;
           } else {
-            // Fallback: write original data
-            TPCircularBufferProduceBytes(&avAudio->audioSampleBuffer, inputBuffer.mData, inputBuffer.mDataByteSize);
+            // The input is in the device's format, not the client's, so passing it through would be
+            // played back as noise. Substitute silence for the same span of time instead.
+            avAudio->conversionFailures.fetch_add(1, std::memory_order_relaxed);
+            const auto deviceRate = procData->aggregateDeviceSampleRate > 0 ? procData->aggregateDeviceSampleRate : procData->clientRequestedSampleRate;
+            UInt64 silenceFrames = deviceRate > 0 ? (UInt64) inputFrames * procData->clientRequestedSampleRate / deviceRate : inputFrames;
+            silenceFrames = std::min<UInt64>(silenceFrames, maxOutputFrames);
+            const auto silenceBytes = (UInt32) (silenceFrames * clientChannels * sizeof(float));
+            memset(procData->conversionBuffer, 0, silenceBytes);
+            produceAudioBytes(avAudio, procData->conversionBuffer, silenceBytes);
             didWriteData = true;
           }
         } else {
           // No conversion needed - direct passthrough
-          TPCircularBufferProduceBytes(&avAudio->audioSampleBuffer, inputBuffer.mData, inputBuffer.mDataByteSize);
+          produceAudioBytes(avAudio, inputBuffer.mData, inputBuffer.mDataByteSize);
           didWriteData = true;
         }
       }
@@ -200,7 +229,7 @@ namespace platf {
 
         // Creating actual silence
         memset(procData->conversionBuffer, 0, silenceBytes);
-        TPCircularBufferProduceBytes(&avAudio->audioSampleBuffer, procData->conversionBuffer, silenceBytes);
+        produceAudioBytes(avAudio, procData->conversionBuffer, silenceBytes);
       } else {
         // Fallback to small stack-allocated buffer for cases without conversion buffer
         float silenceBuffer[512 * 8] = {0};  // Max 512 frames, 8 channels on stack
@@ -208,7 +237,7 @@ namespace platf {
         silenceFrames = std::min(silenceFrames, maxStackFrames);
         UInt32 silenceBytes = silenceFrames * clientChannels * sizeof(float);
 
-        TPCircularBufferProduceBytes(&avAudio->audioSampleBuffer, silenceBuffer, silenceBytes);
+        produceAudioBytes(avAudio, silenceBuffer, silenceBytes);
       }
     }
 
@@ -374,9 +403,11 @@ namespace platf {
          fromConnection:(AVCaptureConnection *)connection {
   if (connection == self.audioConnection) {
     AudioBufferList audioBufferList;
-    CMBlockBufferRef blockBuffer;
+    CMBlockBufferRef blockBuffer = NULL;
 
-    CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sampleBuffer, NULL, &audioBufferList, sizeof(audioBufferList), NULL, NULL, 0, &blockBuffer);
+    if (CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sampleBuffer, NULL, &audioBufferList, sizeof(audioBufferList), NULL, NULL, 0, &blockBuffer) != noErr) {
+      return;
+    }
 
     // NSAssert(audioBufferList.mNumberBuffers == 1, @"Expected interleaved PCM format but buffer contained %u streams", audioBufferList.mNumberBuffers);
 
@@ -384,7 +415,10 @@ namespace platf {
     // and we don't want to do sanity checks in a performance critical exec path
     AudioBuffer audioBuffer = audioBufferList.mBuffers[0];
 
-    TPCircularBufferProduceBytes(&self->audioSampleBuffer, audioBuffer.mData, audioBuffer.mDataByteSize);
+    platf::produceAudioBytes(self, audioBuffer.mData, audioBuffer.mDataByteSize);
+    if (blockBuffer) {
+      CFRelease(blockBuffer);
+    }
     dispatch_semaphore_signal(self->audioSemaphore);
   }
 }
@@ -532,8 +566,9 @@ namespace platf {
   // Cleanup any existing circular buffer first
   TPCircularBufferCleanup(&self->audioSampleBuffer);
 
-  // Size the buffer to hold 30ms of audio (6 packets of 240 32-bit samples per channel)
-  int ringBufferSize = 6 * 240 * channels * sizeof(float);
+  // Leave room for a briefly stalled consumer; the consumer trims any backlog so latency stays low.
+  // The rate is the 48 kHz Opus requires; TPCircularBuffer rounds up to whole pages anyway.
+  int ringBufferSize = 48000 * platf::kAudioRingBufferMs / 1000 * channels * sizeof(float);
 
   // Initialize the circular buffer with proper size for the channel count
   TPCircularBufferInit(&self->audioSampleBuffer, ringBufferSize);
@@ -543,6 +578,8 @@ namespace platf {
     dispatch_release(self->audioSemaphore);
   }
   self->audioSemaphore = dispatch_semaphore_create(0);
+  self->overflowedBytes = 0;
+  self->conversionFailures = 0;
 
   BOOST_LOG(debug) << "Audio buffer initialized successfully with size: "sv << ringBufferSize << " bytes"sv;
 }
@@ -629,11 +666,26 @@ namespace platf {
   return 0;
 }
 
++ (NSArray<NSNumber *> *)processesExcludedFromSystemTap {
+  AudioObjectPropertyAddress address {
+    kAudioHardwarePropertyTranslatePIDToProcessObject,
+    kAudioObjectPropertyScopeGlobal,
+    kAudioObjectPropertyElementMain
+  };
+  pid_t pid = getpid();
+  AudioObjectID process = kAudioObjectUnknown;
+  UInt32 size = sizeof(process);
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, sizeof(pid), &pid, &size, &process) != noErr || process == kAudioObjectUnknown) {
+    return @[];
+  }
+  return @[@(process)];
+}
+
 - (CATapDescription *)createSystemTapDescriptionForChannels:(UInt8)channels {
   using namespace std::literals;
 
   BOOST_LOG(debug) << "Creating tap description for "sv << (int) channels << " channels (using stereo tap)"sv;
-  NSArray *excludeProcesses = @[];
+  NSArray *excludeProcesses = [AVAudio processesExcludedFromSystemTap];
 
   // Always use stereo tap - it handles mono by duplicating to left/right channels
   CATapDescription *tapDescription = [[CATapDescription alloc] initStereoGlobalTapButExcludeProcesses:excludeProcesses];

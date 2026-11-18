@@ -28,6 +28,8 @@ namespace rtsp_stream {
 }
 
 namespace display_device {
+  /// How long a macOS virtual display outlives its session, so a returning client keeps it.
+  constexpr std::chrono::seconds VIRTUAL_DISPLAY_LINGER {30};
   /**
    * @brief Initialize the implementation and perform the initial state recovery (if needed).
    * @param persistence_filepath File location for reading/saving persistent state.
@@ -117,6 +119,19 @@ namespace display_device {
    * @examples_end
    */
   void revert_configuration();
+
+  /**
+   * @brief Remove the session's virtual display once no client has come back for a while.
+   *
+   * On macOS the virtual display is kept for VIRTUAL_DISPLAY_LINGER after a session ends, so a client
+   * that reconnects or relaunches the app keeps its display and desktop size. Does nothing elsewhere.
+   */
+  void release_virtual_display();
+
+  /**
+   * @brief Remove the session's virtual display right away. Does nothing outside macOS.
+   */
+  void remove_virtual_display();
 
   /**
    * @brief Reset persisted display state and the captured initial state.

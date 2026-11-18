@@ -85,6 +85,29 @@ namespace input {
    */
   std::shared_ptr<input_t> alloc(safe::mail_t mail, std::string session_id);
 
+  /**
+   * @brief Check whether a paired client name identifies a Mac.
+   *
+   * Moonlight does not report the client operating system, so the friendly name from pairing
+   * is the only hint. Names such as "MacBook Air", "iMac", or "Mac mini" count; words that merely
+   * start with "mac", such as "Machine", do not.
+   *
+   * @param client_name Friendly client name from pairing.
+   * @return True when the name contains a word that names a Mac.
+   */
+  bool is_apple_client_name(std::string_view client_name);
+
+  /**
+   * @brief Tell stream input which client it serves.
+   *
+   * A Mac client already sends its Command key as the Windows key, so keybindings that swap
+   * Control and Windows for PC keyboards are skipped for it.
+   *
+   * @param input Stream input state returned by alloc().
+   * @param client_name Friendly client name from pairing.
+   */
+  void set_client_name(const std::shared_ptr<input_t> &input, std::string_view client_name);
+
 #ifdef SUNSHINE_TESTS
   namespace testing {
     /**

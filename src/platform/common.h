@@ -348,6 +348,7 @@ namespace platf {
     yuv444p16,  ///< Planar 10-bit (shifted to 16-bit) YUV 4:4:4
     yuv444p,  ///< Planar 8-bit YUV 4:4:4
     y410,  ///< Y410
+    nv24,  ///< Biplanar 8-bit YUV 4:4:4
     unknown  ///< Unknown
   };
 
@@ -373,6 +374,7 @@ namespace platf {
       _CONVERT(yuv444p16);
       _CONVERT(yuv444p);
       _CONVERT(y410);
+      _CONVERT(nv24);
       _CONVERT(unknown);
     }
 #ifndef DOXYGEN
@@ -412,6 +414,10 @@ namespace platf {
      * @brief Capability bit indicating controller touchpad and motion support.
      */
     constexpr caps_t controller_touch = 0x02;  // Controller touch and motion events
+    /**
+     * @brief Capability bit indicating that the host plays the client's microphone (MacShine extension).
+     */
+    constexpr caps_t client_mic = 0x10000;  // Client microphone upstream, see client_mic.h
   };  // namespace platform_caps
 
   /**
@@ -934,6 +940,31 @@ namespace platf {
   std::unique_ptr<audio_control_t> audio_control();
 
   /**
+   * @brief Destination for the client's microphone audio, usually a virtual input device on the host.
+   */
+  class client_mic_sink_t {
+  public:
+    virtual ~client_mic_sink_t() = default;
+
+    /**
+     * @brief Queue decoded microphone samples for playback.
+     *
+     * @param samples Interleaved float samples.
+     * @param count Number of samples (frames times channels).
+     */
+    virtual void write(const float *samples, std::size_t count) = 0;
+  };
+
+  /**
+   * @brief Open the host's virtual microphone for client audio.
+   *
+   * @param sample_rate Sample rate of the samples passed to write().
+   * @param channels Channel count of the samples passed to write().
+   * @return Sink, or nullptr when no virtual microphone is available on this platform.
+   */
+  std::unique_ptr<client_mic_sink_t> client_mic_sink(int sample_rate, int channels);
+
+  /**
    * @brief Get the display_t instance for the given hwdevice_type.
    * If display_name is empty, use the first monitor that's compatible you can find
    * If you require to use this parameter in a separate thread, make a copy of it.
@@ -988,6 +1019,20 @@ namespace platf {
    * @param priority Thread priority requested from the platform backend.
    */
   void adjust_thread_priority(thread_priority_e priority);
+
+  /**
+   * @brief Whether the host's screen is locked (login window or lock screen showing).
+   *
+   * Clients use it to offer a PIN pad over the stream.
+   * @return True while the session is locked; false when unknown or on platforms that can't tell.
+   */
+#ifdef __APPLE__
+  bool screen_locked();
+#else
+  inline bool screen_locked() {
+    return false;
+  }
+#endif
 
   /**
    * @brief Name the current thread for use with development tools.

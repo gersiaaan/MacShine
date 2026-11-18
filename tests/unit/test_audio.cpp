@@ -6,8 +6,12 @@
 // test includes
 #include "../tests_common.h"
 
+// standard includes
+#include <chrono>
+
 // local includes
 #include <src/audio.h>
+#include <src/config.h>
 #include <src/rtsp.h>
 #include <src/stream.h>
 
@@ -113,4 +117,42 @@ TEST_P(AudioTest, TestEncode) {
 
   timer.join();
   capture.join();
+}
+
+TEST(AudioDelayLineTest, HoldsBuffersUntilTheDelayPassed) {
+  delay_line_t line;
+  const auto start = delay_line_t::clock::time_point {} + std::chrono::seconds {10};
+  line.push(start, {1.0f});
+  line.push(start + std::chrono::milliseconds {5}, {2.0f});
+
+  EXPECT_TRUE(line.pop_ready(start + std::chrono::milliseconds {99}, std::chrono::milliseconds {100}).empty());
+
+  auto ready = line.pop_ready(start + std::chrono::milliseconds {100}, std::chrono::milliseconds {100});
+  ASSERT_EQ(ready.size(), 1U);
+  EXPECT_FLOAT_EQ(ready[0][0], 1.0f);
+  EXPECT_EQ(line.size(), 1U);
+}
+
+TEST(AudioDelayLineTest, ShorterDelayReleasesHeldBuffersInOrder) {
+  delay_line_t line;
+  const auto start = delay_line_t::clock::time_point {} + std::chrono::seconds {10};
+  line.push(start, {1.0f});
+  line.push(start + std::chrono::milliseconds {5}, {2.0f});
+
+  auto ready = line.pop_ready(start + std::chrono::milliseconds {5}, std::chrono::milliseconds {0});
+  ASSERT_EQ(ready.size(), 2U);
+  EXPECT_FLOAT_EQ(ready[0][0], 1.0f);
+  EXPECT_FLOAT_EQ(ready[1][0], 2.0f);
+  EXPECT_EQ(line.size(), 0U);
+}
+
+TEST(AudioDelaySettingTest, ReadsTheDelayFromConfigContent) {
+  EXPECT_EQ(read_audio_delay_ms("audio_delay = 80\n"), 80);
+  EXPECT_EQ(read_audio_delay_ms("stream_audio = enabled\n"), 0);
+}
+
+TEST(AudioDelaySettingTest, ClampsAndRejectsInvalidValues) {
+  EXPECT_EQ(read_audio_delay_ms("audio_delay = 9000\n"), config::MAX_AUDIO_DELAY_MS);
+  EXPECT_EQ(read_audio_delay_ms("audio_delay = -20\n"), 0);
+  EXPECT_EQ(read_audio_delay_ms("audio_delay = soon\n"), 0);
 }

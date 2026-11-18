@@ -10,15 +10,34 @@
 
 namespace platf::capture_color {
 
-  OSType pixel_format(bool ten_bit, bool full_range) {
+  OSType pixel_format(bool ten_bit, bool full_range, bool yuv444) {
+    if (yuv444) {
+      return kCVPixelFormatType_444YpCbCr10BiPlanarFullRange;
+    }
     if (ten_bit) {
       return full_range ? kCVPixelFormatType_420YpCbCr10BiPlanarFullRange : kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange;
     }
     return full_range ? kCVPixelFormatType_420YpCbCr8BiPlanarFullRange : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
   }
 
+  OSType yuv444_encode_format(bool full_range) {
+    return full_range ? kCVPixelFormatType_444YpCbCr8BiPlanarFullRange : kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange;
+  }
+
+  bool yuv444_supported(std::string_view codec_name, bool dynamic_range) {
+    return codec_name == "hevc_videotoolbox" && !dynamic_range;
+  }
+
   bool is_full_range(OSType pixel_format) {
-    return pixel_format == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange || pixel_format == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange;
+    switch (pixel_format) {
+      case kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
+      case kCVPixelFormatType_420YpCbCr10BiPlanarFullRange:
+      case kCVPixelFormatType_444YpCbCr8BiPlanarFullRange:
+      case kCVPixelFormatType_444YpCbCr10BiPlanarFullRange:
+        return true;
+      default:
+        return false;
+    }
   }
 
   CFStringRef ycbcr_matrix(video::colorspace_e colorspace) {

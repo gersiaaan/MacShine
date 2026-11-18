@@ -24,6 +24,7 @@ extern "C" {
 }
 
 // local includes
+#include "client_mic.h"
 #include "config.h"
 #include "display_device.h"
 #include "globals.h"
@@ -74,6 +75,8 @@ static const std::array<short, 17> packetTypes = {
   0x5503,  // Set Adaptive triggers (Sunshine protocol extension)
   0x5504,  // Set player indicator LEDs (Sunshine protocol extension)
 };
+
+constexpr std::uint16_t SCREEN_LOCK_PTYPE = 0x5511;  ///< MacShine extension: host screen locked (1) or unlocked (0).
 
 namespace asio = boost::asio;
 namespace sys = boost::system;
@@ -284,6 +287,14 @@ namespace stream {
 
     // Sunshine protocol extension
     SS_HDR_METADATA metadata;  ///< HDR10 metadata sent with the control message.
+  };
+
+  /**
+   * @brief Control payload telling the client whether the host's screen is locked (MacShine extension).
+   */
+  struct control_screen_lock_t {
+    control_header_v2 header;  ///< Control message header preceding this payload.
+    std::uint8_t locked;  ///< Nonzero while the lock screen or login window shows.
   };
 
   /**
@@ -561,16 +572,21 @@ namespace stream {
 
       platf::feedback_queue_t feedback_queue;  ///< Queue of controller feedback awaiting control-channel delivery.
       safe::mail_raw_t::event_t<video::hdr_info_t> hdr_queue;  ///< Queue of HDR metadata awaiting control-channel delivery.
+      int screen_locked_sent {-1};  ///< Lock state last sent to the client: -1 none yet, 0 unlocked, 1 locked.
     } control;  ///< Runtime state for the encrypted GameStream control channel.
 
     std::uint32_t launch_session_id;  ///< RTSP launch-session ID associated with this stream.
     std::string client_cert;  ///< PEM certificate for the paired client owning the stream.
     std::string input_session_id;  ///< Stable client identity used to retain input devices across resume.
+    std::string client_name;  ///< Friendly client name from pairing.
 
     safe::mail_raw_t::event_t<bool> shutdown_event;  ///< Event raised when the stream should shut down.
     safe::signal_t controlEnd;  ///< Signal raised when the control channel exits.
 
     std::atomic<session::state_e> state;  ///< Current lifecycle state observed by stream workers.
+
+    std::unique_ptr<client_mic::receiver_t> client_mic;  ///< Player for the client's microphone, created on its first packet.
+    bool client_mic_attempted {};  ///< Whether creating client_mic was already tried; only touched by the control thread.
   };
 
   /**
@@ -1170,6 +1186,35 @@ namespace stream {
   }
 
   /**
+   * @brief Tell the client whether the host's screen is locked, so it can offer a PIN pad.
+   *
+   * @param session Active streaming session.
+   * @param locked Whether the screen is locked.
+   * @return 0 when sent; nonzero when no control peer is ready or sending failed.
+   */
+  int send_screen_lock(session_t *session, bool locked) {
+    if (!session->control.peer) {
+      return -1;
+    }
+
+    control_screen_lock_t plaintext {};
+    plaintext.header.type = SCREEN_LOCK_PTYPE;
+    plaintext.header.payloadLength = sizeof(control_screen_lock_t) - sizeof(control_header_v2);
+    plaintext.locked = locked ? 1 : 0;
+
+    std::array<std::uint8_t, sizeof(control_encrypted_t) + crypto::cipher::round_to_pkcs7_padded(sizeof(plaintext)) + crypto::cipher::tag_size>
+      encrypted_payload;
+
+    auto payload = encode_control(session, util::view(plaintext), encrypted_payload);
+    if (session->broadcast_ref->control_server.send(payload, session->control.peer)) {
+      return -1;
+    }
+
+    BOOST_LOG(info) << "Host screen "sv << (locked ? "locked"sv : "unlocked"sv) << ", told the client"sv;
+    return 0;
+  }
+
+  /**
    * @brief Run the broadcast control-channel worker thread.
    *
    * @param server RTSP server instance handling the request.
@@ -1248,6 +1293,23 @@ namespace stream {
       input::passthrough(session->input, std::move(plaintext));
     });
 
+    server->map(client_mic::PACKET_TYPE, [](session_t *session, const std::string_view &payload) {
+      BOOST_LOG(verbose) << "type [CLIENT_MIC]"sv;
+      if (client_mic::is_stop_packet(payload)) {
+        // The client turned its microphone off: close the device and give the default input back.
+        session->client_mic.reset();
+        session->client_mic_attempted = false;
+        return;
+      }
+      if (!session->client_mic_attempted) {
+        session->client_mic_attempted = true;
+        session->client_mic = client_mic::alloc();
+      }
+      if (session->client_mic) {
+        session->client_mic->receive(payload);
+      }
+    });
+
     server->map(packetTypes[IDX_ENCRYPTED], [server](session_t *session, const std::string_view &payload) {
       BOOST_LOG(verbose) << "type [IDX_ENCRYPTED]"sv;
 
@@ -1323,8 +1385,16 @@ namespace stream {
     // termination when we shut down.
     auto shutdown_event = mail::man->event<bool>(mail::shutdown);
     auto broadcast_shutdown_event = mail::man->event<bool>(mail::broadcast_shutdown);
+    auto next_lock_check = std::chrono::steady_clock::now();
+    int screen_locked = 0;
     while (!shutdown_event->peek() && !broadcast_shutdown_event->peek()) {
       bool has_session_awaiting_peer = false;
+
+      // Poll the lock state twice a second; clients get it whenever it changes (and once on connect).
+      if (const auto now = std::chrono::steady_clock::now(); now >= next_lock_check) {
+        screen_locked = platf::screen_locked() ? 1 : 0;
+        next_lock_check = now + 500ms;
+      }
 
       {
         auto lg = server->_sessions.lock();
@@ -1379,6 +1449,12 @@ namespace stream {
               auto hdr_info = hdr_queue->pop();
 
               send_hdr_mode(session, std::move(hdr_info));
+            }
+
+            if (session->control.peer && screen_locked != session->control.screen_locked_sent) {
+              if (send_screen_lock(session, screen_locked == 1) == 0) {
+                session->control.screen_locked_sent = screen_locked;
+              }
             }
           }
 
@@ -2245,6 +2321,8 @@ namespace stream {
       session.audioThread.join();
       BOOST_LOG(debug) << "Waiting for control to end..."sv;
       session.controlEnd.view();
+      // The control thread has exited, so nothing feeds the client microphone anymore.
+      session.client_mic.reset();
       // Reset input on session stop to avoid stuck repeated keys
       BOOST_LOG(debug) << "Resetting Input..."sv;
       input::reset(session.input);
@@ -2264,6 +2342,9 @@ namespace stream {
 
         if (revert_display_config) {
           display_device::revert_configuration();
+        } else {
+          // Nobody is watching the app: drop the virtual display unless a client resumes soon.
+          display_device::release_virtual_display();
         }
 
         platf::streaming_will_stop();
@@ -2277,6 +2358,7 @@ namespace stream {
      */
     int start(session_t &session, const std::string &addr_string) {
       session.input = input::alloc(session.mail, session.input_session_id);
+      input::set_client_name(session.input, session.client_name);
 
       session.broadcast_ref = broadcast.ref();
       if (!session.broadcast_ref) {
@@ -2329,6 +2411,7 @@ namespace stream {
       session->launch_session_id = launch_session.id;
       session->client_cert = launch_session.client_cert;
       session->input_session_id = launch_session.client_cert.empty() ? launch_session.unique_id : launch_session.client_cert;
+      session->client_name = launch_session.client_name;
 
       session->config = config;
 

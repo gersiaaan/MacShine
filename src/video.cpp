@@ -160,6 +160,19 @@ namespace video {
     return AV_PROFILE_H264_HIGH;
   }
 
+  int select_hevc_profile(std::string_view encoder_name, const config_t &config) {
+    if (config.chromaSamplingType != 1) {
+      return config.dynamicRange ? AV_PROFILE_HEVC_MAIN_10 : AV_PROFILE_HEVC_MAIN;
+    }
+    // FFmpeg maps RExt to VideoToolbox's Main 4:2:2 10 profile, which subsamples the chroma.
+    // Without a profile, VideoToolbox picks RExt 4:4:4 from the 4:4:4 input frames.
+    if (encoder_name == "hevc_videotoolbox"sv) {
+      return AV_PROFILE_UNKNOWN;
+    }
+    // HEVC uses the same RExt profile for both 8 and 10 bit YUV 4:4:4 encoding
+    return AV_PROFILE_HEVC_REXT;
+  }
+
   /**
    * @brief Resolve a client-requested dynamic range against probed encoder capabilities.
    *
@@ -1381,8 +1394,8 @@ namespace video {
       AV_PIX_FMT_VIDEOTOOLBOX,
       AV_PIX_FMT_NV12,
       AV_PIX_FMT_P010,
-      AV_PIX_FMT_NONE,
-      AV_PIX_FMT_NONE,
+      AV_PIX_FMT_NV24,  // 8-bit YUV 4:4:4, HEVC only (see platf::capture_color::yuv444_supported)
+      AV_PIX_FMT_NONE,  // FFmpeg forces Main10, and so 4:2:0, for 10-bit VideoToolbox input
       vt_init_avcodec_hardware_input_buffer
     ),
     {
@@ -1443,7 +1456,7 @@ namespace video {
       "h264_videotoolbox"s,
       {},  // capabilities
     },
-    PARALLEL_ENCODING
+    PARALLEL_ENCODING | YUV444_SUPPORT
   };
 #endif
 
@@ -2041,12 +2054,7 @@ namespace video {
           break;
 
         case 1:
-          if (config.chromaSamplingType == 1) {
-            // HEVC uses the same RExt profile for both 8 and 10 bit YUV 4:4:4 encoding
-            ctx->profile = AV_PROFILE_HEVC_REXT;
-          } else {
-            ctx->profile = config.dynamicRange ? AV_PROFILE_HEVC_MAIN_10 : AV_PROFILE_HEVC_MAIN;
-          }
+          ctx->profile = select_hevc_profile(video_format.name, config);
           break;
 
         case 2:
@@ -3766,6 +3774,8 @@ namespace video {
         return yuv444p;
       case AV_PIX_FMT_YUV444P16:
         return yuv444p16;
+      case AV_PIX_FMT_NV24:
+        return nv24;
       default:
         return unknown;
     }

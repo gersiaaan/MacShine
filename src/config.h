@@ -156,6 +156,7 @@ namespace config {
       bool make_primary;  ///< Make the virtual display the main display (menu bar and Dock) while streaming.
       bool disable_host;  ///< Turn the host's own displays off while streaming, so only the virtual display remains.
       bool stop_hotkey;  ///< End every stream when Cmd+Esc is pressed on the host.
+      bool block_local_input;  ///< Ignore the host's own keyboard and trackpad while streaming, except Cmd and Esc.
       int scale_percent;  ///< Desktop size relative to the client resolution, in percent (50-200).
     } macos_vd;  ///< macOS virtual display settings.
 
@@ -253,7 +254,28 @@ namespace config {
     bool stream;  ///< Enable audio streaming to clients
     bool install_steam_drivers;  ///< Install Steam audio drivers for enhanced compatibility
     bool external_audio;  ///< Windows capture-only mode; an external router owns endpoint defaults and formats.
+    int delay_ms;  ///< Extra delay in milliseconds applied to streamed audio, to line it up with slower video.
+    bool client_mic;  ///< Play the client's microphone into the host's virtual "MacShine" input device.
+    bool client_mic_default_input;  ///< Make the virtual microphone the default input while the client sends audio.
+    bool client_mic_voice_isolation;  ///< Filter the client's microphone with Apple's voice isolation.
+    int client_mic_gain_db;  ///< Level change applied to the client's microphone, in dB.
+    bool client_mic_echo_cancellation;  ///< Remove the stream's own sound from the client's microphone.
+    bool client_mic_eq;  ///< Shape the client's microphone towards a warmer, iPhone-like voice.
   };
+
+  /**
+   * @brief Accepted range of the client_mic_gain setting, in dB.
+   */
+  constexpr int MIN_CLIENT_MIC_GAIN_DB = -30;
+  /**
+   * @brief Largest accepted value of the client_mic_gain setting, in dB.
+   */
+  constexpr int MAX_CLIENT_MIC_GAIN_DB = 12;
+
+  /**
+   * @brief Largest accepted value of the audio_delay setting, in milliseconds.
+   */
+  constexpr int MAX_AUDIO_DELAY_MS = 500;
 
   /**
    * @brief Encryption policy that always sends unencrypted video.
