@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds the "MacShine" virtual microphone, a renamed BlackHole driver, with the Command Line Tools only.
 #
-# Device 1 "MacShine"        : visible input, what apps (Claude, Zoom, ...) record from.
+# Device 1 "MacShine"        : visible input, what apps (Zoom, FaceTime, ...) record from.
 # Device 2 "MacShine Sender" : hidden output, MacShine plays the client's microphone into it.
 #
 # Usage: build-driver.sh [output-dir]   -> produces <output-dir>/MacShine.driver

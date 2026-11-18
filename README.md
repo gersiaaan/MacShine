@@ -116,7 +116,7 @@ Full details in [MACSHINE.md](MACSHINE.md).
 - If a virtual display cannot be created, MacShine falls back to streaming the Mac's real screen.
 
 ## Credits
-Built by **Chang Cao** ([ARKSITE](https://arksite.de)) together with **Claude**.
+Built by **Chang Cao** ([ARKSITE](https://arksite.de)).
 
 MacShine stands on the shoulders of
 [Sunshine](https://github.com/LizardByte/Sunshine) by LizardByte (streaming engine),

@@ -18,7 +18,7 @@ Display-Logik angelehnt an OpenDisplay (peetzweg/opendisplay). Beide GPL-3.0, di
 ## Mikrofon vom Client (z. B. Artemide Duo)
 - Clients, die es können, schicken ihr Mikrofon als Opus über den verschlüsselten Steuerkanal (Pakettyp `0x5510`, Feature-Flag `0x10000`).
 - MacShine spielt es in das eigene Eingabegerät **„MacShine"**, ein umbenannter BlackHole-Treiber. Sichtbar ist nur der Eingang; den versteckten Ausgang „MacShine Sender" füttert MacShine.
-- Während der Client sendet, ist „MacShine" die Standard-Eingabe des Macs (Claude, Siri, Zoom … hören das Duo). Danach kommt die vorige Eingabe zurück.
+- Während der Client sendet, ist „MacShine" die Standard-Eingabe des Macs (Siri, Zoom, FaceTime … hören das Duo). Danach kommt die vorige Eingabe zurück.
 - Treiber bauen und installieren (braucht das Admin-Passwort, Ton setzt eine Sekunde aus):
   ```
   scripts/macshine-mic/build-driver.sh
