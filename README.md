@@ -3,6 +3,7 @@
 
   <h1>MacShine</h1>
   <h3>Your Mac, on any screen. Natively.</h3>
+  <h4>🖥 Virtual displays for macOS, built right in.</h4>
 
   <p>
     MacShine turns your iPad, MacBook or Windows laptop into a real display for your Mac.<br/>
@@ -26,6 +27,16 @@ Wrong aspect ratio, black bars, blurry text, tiny UI.
 **MacShine works the other way round.** When a device connects, your Mac creates a brand-new
 display that exists only for that device, in exactly its resolution. macOS renders straight into it.
 What you see on the iPad is the Mac's real desktop, pixel for pixel.
+
+> ### ✨ Virtual display for macOS, all in one
+> MacShine creates the virtual display **and** switches off your Mac's own screen, by itself, the moment you connect.
+>
+> - ❌ No HDMI dummy plug
+> - ❌ No extra display server or driver to set up
+> - ❌ No second app to juggle next to your streaming host
+>
+> Connect from your device, and your Mac's screen goes dark while your full desktop appears on the device in its native resolution.
+> Disconnect, and everything comes back. That's it.
 
 ## Features
 
