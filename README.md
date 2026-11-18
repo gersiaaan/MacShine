@@ -8,7 +8,8 @@
   <p>
     MacShine turns your iPad, MacBook or Windows laptop into a real display for your Mac.<br/>
     Not a mirrored screen squeezed into the wrong shape, but a <b>virtual display made for the device you are holding</b>:
-    its exact resolution, Retina sharp, color accurate and fast.
+    its exact resolution, Retina sharp, color accurate and fast.<br/>
+    🎙 Want to talk? Your device's microphone can come along too, if you want it.
   </p>
 
   <a href="https://github.com/gersiaaan/MacShine/releases/latest"><img src="https://img.shields.io/github/v/release/gersiaaan/MacShine?style=for-the-badge&label=download&color=ffb000" alt="Download"/></a>
@@ -63,7 +64,7 @@ What you see on the iPad is the Mac's real desktop, pixel for pixel.
 - **Cmd + Esc** ends everything instantly and gives you your Mac back.
 
 ### 🎙 Input from the device
-- **Microphone passthrough.** The device's mic shows up on the Mac as an input called "MacShine", with echo cancellation, voice isolation and EQ. Siri, Zoom and every other app just hear it.
+- **Microphone passthrough (optional).** Turn it on if you want it: the device's mic shows up on the Mac as an input called "MacShine", with echo cancellation, voice isolation and EQ. Siri, Zoom and every other app just hear it. Off with one switch (`client_mic`).
 - **Touch and gestures** from tablets.
 
 <!-- Screenshots section: add iPad at 100 % and "More Space" here, then show it again.
